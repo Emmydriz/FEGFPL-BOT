@@ -17,21 +17,23 @@ class CommunityService:
         user: User,
         bot=None
     ) -> CommunityInvite:
-        invite_link = f"https://t.me/+feg_invite_{user.feg_member_id}"
+        invite_link = settings.FEG_COMMUNITY_INVITE_LINK or f"https://t.me/+feg_invite_{user.feg_member_id}"
         invite_link_id = f"link_{user.feg_member_id}"
 
-        # If bot instance and live channel ID provided, attempt live chat invite link generation
         if bot and settings.FEG_COMMUNITY_CHAT_ID:
             try:
+                expire_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=48)
                 chat_invite = await bot.create_chat_invite_link(
                     chat_id=settings.FEG_COMMUNITY_CHAT_ID,
-                    name=f"FEG Member {user.feg_member_id}",
+                    name=f"FEG Member {user.feg_member_id} ({user.full_name[:15]})",
+                    expire_date=expire_dt,
                     member_limit=1
                 )
                 invite_link = chat_invite.invite_link
-                invite_link_id = getattr(chat_invite, "name", invite_link_id)
+                invite_link_id = chat_invite.invite_link
+                logger.info(f"Generated fresh single-use Telegram group invite link for User {user.id}: {invite_link}")
             except Exception as e:
-                logger.warning(f"Could not generate live Telegram invite link via Bot API: {e}. Falling back to member deep link.")
+                logger.warning(f"Could not generate live Telegram single-use invite link: {e}. Using configured link: {invite_link}")
 
         invite = CommunityInvite(
             user_id=user.id,

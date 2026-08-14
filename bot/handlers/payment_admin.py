@@ -18,6 +18,9 @@ async def admin_approve_payment_callback(update: Update, context: ContextTypes.D
     payment_id = int(data.replace("approve_pay_", ""))
     admin_user = update.effective_user
     admin_role = AuthService.get_admin_role(admin_user.id)
+    if admin_role not in ["SUPER_ADMIN", "FINANCE_ADMIN"]:
+        await query.answer("⚠️ Only Super Admin and Finance Admin can approve member payments.", show_alert=True)
+        return
 
     async with get_db_session() as session:
         success, payment, user = await PaymentService.approve_payment(

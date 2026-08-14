@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     FEG_BOT_USERNAME: str = "@FEGFPL_Bot"
     FEG_COMMUNITY_CHAT_ID: int = -100123456789
     FEG_ANNOUNCEMENT_CHANNEL_ID: int = -100987654321
+    FEG_COMMUNITY_INVITE_LINK: str = "https://t.me/+feg_invite_link"
 
     # Payment details
     FEG_REGISTRATION_FEE: int = 5000
