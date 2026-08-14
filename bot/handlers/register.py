@@ -354,14 +354,21 @@ async def show_payment_details_handler(update: Update, context: ContextTypes.DEF
 
 
 async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    photo = update.message.photo
-    if not photo:
+    proof_file_id = None
+    is_document = False
+
+    if update.message.photo:
+        proof_file_id = update.message.photo[-1].file_id
+    elif update.message.document:
+        proof_file_id = update.message.document.file_id
+        is_document = True
+
+    if not proof_file_id:
         await update.message.reply_text(
-            "📷 Please upload a photo or screenshot of your transfer receipt."
+            "📷 Please upload a photo, screenshot, or document file of your bank transfer receipt."
         )
         return PAYMENT_PROOF
 
-    proof_file_id = photo[-1].file_id
     telegram_id = update.effective_user.id
 
     async with get_db_session() as session:
@@ -412,7 +419,7 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
         admin_ids = [update.effective_user.id]
 
     admin_alert = (
-        "💳 **NEW PAYMENT SUBMISSION FOR REVIEW**\n\n"
+        "💳 **NEW PAYMENT SUBMISSION FOR REVIEW** 🚨\n\n"
         "👤 **MEMBER DETAILS:**\n"
         f"• **Full Name:** {user.full_name}\n"
         f"• **FEG Member ID:** `{member_feg_id}`\n"
@@ -442,31 +449,62 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
     for admin_id in set(admin_ids):
         if admin_id:
             try:
-                await context.bot.send_photo(
-                    chat_id=admin_id,
-                    photo=proof_file_id,
-                    caption=admin_alert,
-                    reply_markup=keyboard,
-                    parse_mode="Markdown"
-                )
+                if is_document:
+                    await context.bot.send_document(
+                        chat_id=admin_id,
+                        document=proof_file_id,
+                        caption=admin_alert,
+                        reply_markup=keyboard,
+                        parse_mode="Markdown"
+                    )
+                else:
+                    await context.bot.send_photo(
+                        chat_id=admin_id,
+                        photo=proof_file_id,
+                        caption=admin_alert,
+                        reply_markup=keyboard,
+                        parse_mode="Markdown"
+                    )
                 sent_count += 1
-                logger.info(f"Successfully sent payment review photo alert to Admin Telegram ID {admin_id}")
-            except Exception as photo_err:
-                logger.warning(f"Could not send photo DM alert to Admin ID {admin_id}: {photo_err}. Attempting text fallback...")
+                logger.info(f"Successfully sent payment review receipt alert to Admin Telegram ID {admin_id}")
+            except Exception as media_err:
+                logger.warning(f"Media alert with Markdown failed for Admin ID {admin_id}: {media_err}. Attempting plain media fallback...")
                 try:
                     plain_alert = admin_alert.replace("**", "").replace("`", "")
-                    await context.bot.send_message(
-                        chat_id=admin_id,
-                        text=plain_alert,
-                        reply_markup=keyboard
-                    )
+                    if is_document:
+                        await context.bot.send_document(
+                            chat_id=admin_id,
+                            document=proof_file_id,
+                            caption=plain_alert,
+                            reply_markup=keyboard
+                        )
+                    else:
+                        await context.bot.send_photo(
+                            chat_id=admin_id,
+                            photo=proof_file_id,
+                            caption=plain_alert,
+                            reply_markup=keyboard
+                        )
                     sent_count += 1
-                    logger.info(f"Successfully sent text fallback payment review alert to Admin ID {admin_id}")
-                except Exception as msg_err:
-                    logger.error(
-                        f"Failed to deliver payment review notification to Admin ID {admin_id}: {msg_err}. "
-                        "Ensure the admin has started a DM chat with @FEGFPL_Bot by sending /start."
-                    )
+                    logger.info(f"Successfully sent plain media fallback receipt alert to Admin ID {admin_id}")
+                except Exception as fallback_err:
+                    logger.warning(f"Plain media failed for Admin ID {admin_id}: {fallback_err}. Sending separate receipt media + text message...")
+                    try:
+                        if is_document:
+                            await context.bot.send_document(chat_id=admin_id, document=proof_file_id)
+                        else:
+                            await context.bot.send_photo(chat_id=admin_id, photo=proof_file_id)
+
+                        await context.bot.send_message(
+                            chat_id=admin_id,
+                            text=admin_alert,
+                            reply_markup=keyboard,
+                            parse_mode="Markdown"
+                        )
+                        sent_count += 1
+                        logger.info(f"Successfully sent separate receipt media + details alert to Admin ID {admin_id}")
+                    except Exception as final_err:
+                        logger.error(f"Failed to deliver payment review DM to Admin ID {admin_id}: {final_err}")
 
     if sent_count == 0:
         logger.error(
@@ -502,7 +540,7 @@ def get_registration_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(edit_fpl_id_callback, pattern="^edit_fpl_id$"),
                 CallbackQueryHandler(edit_bank_details_callback, pattern="^edit_bank_details$")
             ],
-            PAYMENT_PROOF: [MessageHandler(filters.PHOTO, payment_proof_handler)]
+            PAYMENT_PROOF: [MessageHandler(filters.PHOTO | filters.Document.ALL, payment_proof_handler)]
         },
         fallbacks=[
             CommandHandler("cancel", cancel_registration_handler),
