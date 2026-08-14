@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from database.db import get_db_session
 from services.hall_of_fame_service import HallOfFameService
-from services.auth_service import admin_required
+from services.auth_service import admin_required, approved_member_required
 from config.settings import settings
 from config.logging_config import logger
 
@@ -101,12 +101,14 @@ async def _render_champion_category(update: Update, context: ContextTypes.DEFAUL
 
 
 # General Routing Handlers
+@approved_member_required()
 async def hall_of_fame_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     category = args[0].upper() if args and args[0].lower() in ["classic", "h2h", "cup"] else "CLASSIC"
     await _render_hall_of_fame_category(update, context, category)
 
 
+@approved_member_required()
 async def champion_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     category = args[0].upper() if args and args[0].lower() in ["classic", "h2h", "cup"] else "CLASSIC"
@@ -114,26 +116,32 @@ async def champion_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # Specific Category Command Handlers
+@approved_member_required()
 async def hall_of_fame_classic_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _render_hall_of_fame_category(update, context, "CLASSIC")
 
 
+@approved_member_required()
 async def hall_of_fame_h2h_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _render_hall_of_fame_category(update, context, "H2H")
 
 
+@approved_member_required()
 async def hall_of_fame_cup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _render_hall_of_fame_category(update, context, "CUP")
 
 
+@approved_member_required()
 async def champion_classic_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _render_champion_category(update, context, "CLASSIC")
 
 
+@approved_member_required()
 async def champion_h2h_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _render_champion_category(update, context, "H2H")
 
 
+@approved_member_required()
 async def champion_cup_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _render_champion_category(update, context, "CUP")
 

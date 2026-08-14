@@ -6,11 +6,13 @@ from services.member_service import MemberService
 from services.fpl_service import FPLService
 from services.referral_service import ReferralService
 from services.hall_of_fame_service import HallOfFameService
+from services.auth_service import approved_member_required
 from config.settings import settings
 from config.logging_config import logger
 from sqlalchemy import select, func
 
 
+@approved_member_required()
 async def member_profile_dashboard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_tg = update.effective_user
     chat_id = update.effective_chat.id
@@ -99,6 +101,7 @@ async def member_profile_dashboard_handler(update: Update, context: ContextTypes
                 await update.message.reply_text(plain_msg, reply_markup=keyboard)
 
 
+@approved_member_required()
 async def classic_dashboard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🏆 **FEG CLASSIC LEAGUE**\n\n"
@@ -119,6 +122,7 @@ async def classic_dashboard_handler(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown", disable_web_page_preview=True)
 
 
+@approved_member_required()
 async def h2h_dashboard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "⚔️ **FEG HEAD-TO-HEAD (H2H) LEAGUE**\n\n"
@@ -139,6 +143,7 @@ async def h2h_dashboard_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown", disable_web_page_preview=True)
 
 
+@approved_member_required()
 async def cup_dashboard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_info = await HallOfFameService.poll_fpl_cup_status()
 
@@ -211,6 +216,7 @@ async def verify_membership_callback(update: Update, context: ContextTypes.DEFAU
         await query.message.reply_text(msg, parse_mode="Markdown")
 
 
+@approved_member_required()
 async def standings_classic_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     league_name, standings = await FPLService.get_league_standings(settings.FPL_CLASSIC_LEAGUE_ID, "classic")
 
@@ -229,6 +235,7 @@ async def standings_classic_handler(update: Update, context: ContextTypes.DEFAUL
         await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+@approved_member_required()
 async def standings_h2h_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     league_name, standings = await FPLService.get_league_standings(settings.FPL_H2H_LEAGUE_ID, "h2h")
 
@@ -247,6 +254,7 @@ async def standings_h2h_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+@approved_member_required()
 async def motw_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     gw_num = int(args[0]) if args and args[0].isdigit() else 4

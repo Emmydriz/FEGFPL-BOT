@@ -2,14 +2,17 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from services.fpl_service import FPLService
 from services.graphic_engine import GraphicEngine
+from services.auth_service import approved_member_required
 from config.settings import settings
 
 
+@approved_member_required()
 async def captain_picks_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await FPLService.get_official_captain_picks()
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+@approved_member_required()
 async def differentials_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bootstrap = await FPLService.get_bootstrap_data()
     curr_gw = await FPLService.get_current_or_next_gameweek()
@@ -42,11 +45,13 @@ async def differentials_handler(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+@approved_member_required()
 async def price_watch_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await FPLService.get_official_price_watch()
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+@approved_member_required()
 async def gw_preview_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     curr_gw = await FPLService.get_current_or_next_gameweek()
     gw_id = curr_gw.get("id", 1)
@@ -62,6 +67,7 @@ async def gw_preview_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+@approved_member_required()
 async def team_of_gw_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🎨 Generating official Team of the Gameweek graphic from live FPL data...")
 

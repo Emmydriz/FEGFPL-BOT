@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from config.settings import settings
 from database.db import get_db_session
@@ -40,49 +40,115 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 logger.warning(f"Could not record referral code during start_handler: {e}")
 
+    # Check user approval status
+    is_approved = False
+    async with get_db_session() as session:
+        from services.auth_service import AuthService
+        from services.member_service import MemberService
+        if AuthService.is_authorized_admin(user.id):
+            is_approved = True
+        else:
+            db_user = await MemberService.get_user_by_telegram_id(session, user.id)
+            if db_user and db_user.registration_status in ["APPROVED", "COMMUNITY_ACCESS_GRANTED"]:
+                is_approved = True
+
+    if not is_approved:
+        # Unapproved / New Registering Member View (Commands Directory NOT Revealed)
+        msg = (
+            "⚽ **WELCOME TO FEG FPL** ⚽\n\n"
+            "Welcome to the official **FEG FPL** community and competition platform!\n\n"
+            "To join our private community and participate in official weekly & season competitions, "
+            "you must complete registration and verification.\n\n"
+            f"💳 **Registration Fee:** ₦{settings.FEG_REGISTRATION_FEE:,}\n"
+            f"📱 **Detected Telegram ID:** `{user.id}` (Auto-recorded)\n\n"
+            "ℹ️ **Registration Reassurance:** Do not worry if you make a mistake! "
+            "You will be shown a full summary review screen to verify and edit all your information before payment.\n\n"
+            "Click the button below or type `/register` to begin registration."
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 START REGISTRATION", callback_data="start_registration")],
+            [InlineKeyboardButton("💳 VIEW RECEIVING BANK ACCOUNT", callback_data="show_pay_info")]
+        ])
+        await update.message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown")
+        return
+
+    # Approved Member View (Commands Directory Revealed)
     msg = (
-        "⚽ **WELCOME TO FEG FPL** ⚽\n\n"
-        "Welcome to the official **FEG FPL** community and competition platform.\n\n"
-        "To participate in the FEG competition and gain access to our private community, "
-        "you must complete registration and verification.\n\n"
-        f"💳 **Registration Fee:** ₦{settings.FEG_REGISTRATION_FEE:,}\n"
-        f"📱 **Detected Telegram ID:** `{user.id}` (Automatically recorded)\n\n"
-        "ℹ️ **Note:** Do not worry if you make a mistake during registration! "
-        "You will be shown a full summary screen to review and edit all your details before making payment.\n\n"
-        "📌 **MEMBER COMMANDS DIRECTORY:**\n"
-        "• `/profile` or `/dashboard` — View your FEG Member Profile & Status\n"
-        "• `/classic` — Access FEG Classic League link & code\n"
-        "• `/h2h` — Access FEG Head-to-Head League link & code\n"
+        "⚽ **WELCOME BACK TO FEG FPL** 🏆\n\n"
+        f"Hi **{user.full_name}**! Your FEG Community access is active.\n\n"
+        "📌 **YOUR MEMBER COMMANDS DIRECTORY:**\n\n"
+        "👤 **PROFILE & DASHBOARD:**\n"
+        "• `/profile` or `/dashboard` — View your FEG Member Profile, FPL details & bank account\n"
+        "• `/info` — Inspect your registration & community status\n"
+        "• `/referral` — Get your personal referral link & rewards\n\n"
+        "🏆 **LEAGUES & STANDINGS:**\n"
+        "• `/classic` — Join FEG Classic League (Code: `672262`)\n"
+        "• `/h2h` — Join FEG H2H League (Code: `672209`)\n"
         "• `/cup` — FEG Cup status & eligibility\n"
         "• `/cupstatus` — Check live FPL Cup qualification threshold\n"
+        "• `/motw` — View Manager of the Week info & top scores (starts GW4)\n"
+        "• `/standings_classic` — Live top 10 Classic League standings\n"
+        "• `/standings_h2h` — Live top 10 H2H League standings\n\n"
+        "🏛️ **HALL OF FAME & CHAMPIONS:**\n"
         "• `/halloffame_classic` — View Classic League Hall of Fame\n"
         "• `/halloffame_h2h` — View H2H League Hall of Fame\n"
-        "• `/halloffame_cup` — View Cup Hall of Fame & 'The Untouchable' Titleholders\n"
-        "• `/referral` — Get your personal referral link & rewards\n"
-        "• `/captain` — Weekly Captain Recommendations\n"
-        "• `/differentials` — Differential player picks\n"
-        "• `/pricewatch` — Player price rise/fall watch\n"
+        "• `/halloffame_cup` — View Cup Hall of Fame ('The Untouchable')\n"
+        "• `/champion_classic` — Reigning Classic Champion\n"
+        "• `/champion_h2h` — Reigning H2H Champion\n"
+        "• `/champion_cup` — Reigning 'The Untouchable' Titleholder\n\n"
+        "⚽ **FPL MEDIA & STATS ENGINE:**\n"
+        "• `/captain` — Weekly Captain recommendations\n"
+        "• `/differentials` — Differential player picks under 10%\n"
+        "• `/pricewatch` — Player price risers & fallers watch\n"
         "• `/preview` — Gameweek preview & deadline\n"
         "• `/teamofgw` — Team of the Gameweek graphic\n"
-        "• `/help` — Display list of commands & support\n\n"
-        "Click the button below to start registration."
+        "• `/help` — Full command guide & support"
     )
-    await update.message.reply_text(msg, reply_markup=get_member_start_keyboard(), parse_mode="Markdown")
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 OPEN MEMBER DASHBOARD", callback_data="open_dashboard")]
+    ])
+    await update.message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown")
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    is_approved = False
+    async with get_db_session() as session:
+        from services.auth_service import AuthService
+        from services.member_service import MemberService
+        if AuthService.is_authorized_admin(user.id):
+            is_approved = True
+        else:
+            db_user = await MemberService.get_user_by_telegram_id(session, user.id)
+            if db_user and db_user.registration_status in ["APPROVED", "COMMUNITY_ACCESS_GRANTED"]:
+                is_approved = True
+
+    if not is_approved:
+        msg = (
+            "❓ **FEG FPL REGISTRATION & HELP GUIDE**\n\n"
+            "Welcome! You are currently unregistered or pending payment verification.\n\n"
+            "📌 **AVAILABLE REGISTRATION COMMANDS:**\n"
+            "• `/start` — Welcome screen & begin registration\n"
+            "• `/register` — Interactively fill registration details\n"
+            "• `/pay` or `/payment` — View official receiving bank account details\n"
+            "• `/help` — Display this registration help guide\n\n"
+            "🔒 *All member competition features (Leagues, Dashboard, Hall of Fame, FPL Media) will unlock automatically once your registration payment is verified by admin!*"
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+        return
+
+    # Approved Member Help
     msg = (
         "❓ **FEG FPL COMMANDS & HELP DIRECTORY**\n\n"
         "Here are all the available commands you can use in private DM:\n\n"
         "👤 **MEMBER COMMANDS:**\n"
-        "• `/start` — Welcome screen & start registration\n"
-        "• `/register` — Begin member registration flow\n"
+        "• `/start` — Welcome screen\n"
         "• `/profile` — View your FEG Member Profile & Status\n"
         "• `/dashboard` — Interactive Member Dashboard\n"
         "• `/classic` — Join FEG Classic League & verify\n"
         "• `/h2h` — Join FEG H2H League & verify\n"
         "• `/cup` — Check FEG Cup status\n"
-        "• `/cupstatus` — Poll live FPL Cup status & qualification progress\n"
+        "• `/cupstatus` — Poll live FPL Cup status\n"
         "• `/referral` — Personal referral link & milestone tracker\n"
         "• `/motw` — Manager of the Week info (starts GW4)\n"
         "• `/standings_classic` — Live Classic League standings\n"
@@ -93,22 +159,13 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• `/halloffame_cup` — Knockout Cup Hall of Fame ('The Untouchable')\n"
         "• `/champion_classic` — Reigning Classic Champion\n"
         "• `/champion_h2h` — Reigning H2H Champion\n"
-        "• `/champion_cup` — Reigning 'The Untouchable' Cup Titleholder\n\n"
+        "• `/champion_cup` — Reigning 'The Untouchable' Titleholder\n\n"
         "⚽ **FPL MEDIA & STATS:**\n"
         "• `/captain` — Captain recommendations\n"
         "• `/differentials` — Differential player picks\n"
         "• `/pricewatch` — Price rise & fall watch\n"
         "• `/preview` — Gameweek deadline preview\n"
         "• `/teamofgw` — View Team of the Gameweek graphic\n\n"
-        "⚙️ **ADMIN COMMANDS:**\n"
-        "• `/admin` — Open Admin Dashboard\n"
-        "• `/pending` or `/payments` — Review pending member payments\n"
-        "• `/search_member FEG_ID` — Inspect full member administrative profile & bank details\n"
-        "• `/admin_referrals` — Track referral leaderboard & pending payouts\n"
-        "• `/finalizeseason [season]` — Automated FPL season wrap & Hall of Fame induction\n"
-        "• `/addwinner` — Admin fallback winner record override\n"
-        "• `/announce_gw_winner GW` — Post GW winner to community & trigger admin payout\n"
-        "• `/announcement_template` — Get official pinned channel template\n\n"
         "💡 *You can type any command or use the interactive buttons on your dashboard.*"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
@@ -169,7 +226,6 @@ async def announcement_template_handler(update: Update, context: ContextTypes.DE
         "• `/health` — FEG system & database status report.\n\n"
         "💡 *Make sure you join both the Classic and H2H leagues via the bot before Gameweek 4 to remain eligible for all Gameweek and Season cash rewards!*"
     )
-
     try:
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:

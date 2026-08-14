@@ -103,3 +103,36 @@ def admin_required(required_role: Optional[str] = None):
             return await func(update, context, *args, **kwargs)
         return wrapper
     return decorator
+
+
+def approved_member_required():
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+            user_tg = update.effective_user
+            if not user_tg:
+                return
+
+            if AuthService.is_authorized_admin(user_tg.id):
+                return await func(update, context, *args, **kwargs)
+
+            async with get_db_session() as session:
+                from services.member_service import MemberService
+                user = await MemberService.get_user_by_telegram_id(session, user_tg.id)
+
+                if not user or user.registration_status not in ["APPROVED", "COMMUNITY_ACCESS_GRANTED"]:
+                    msg = (
+                        "🔒 **RESTRICTED MEMBER COMMAND**\n\n"
+                        "This command is exclusive to verified paid members of the FEG FPL Community.\n\n"
+                        "Please complete your registration and payment verification to unlock all member commands and features!\n\n"
+                        "👉 Type `/start` or `/register` to begin registration, or `/pay` to view receiving bank details."
+                    )
+                    target_msg = update.callback_query.message if update.callback_query else update.message
+                    if update.callback_query:
+                        await update.callback_query.answer("Access Restricted - Verification Required", show_alert=True)
+                    await target_msg.reply_text(msg, parse_mode="Markdown")
+                    return
+
+            return await func(update, context, *args, **kwargs)
+        return wrapper
+    return decorator
