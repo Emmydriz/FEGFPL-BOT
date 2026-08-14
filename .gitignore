@@ -1,0 +1,27 @@
+# Secrets & Config
+.env
+.env.*
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+feg_fpl.db
+
+# Python Cache & Environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+ENV/
+.venv
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary / Scratch Files
+scratch/
+*.log
