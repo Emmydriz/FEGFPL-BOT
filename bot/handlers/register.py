@@ -405,9 +405,9 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
     )
     await safe_send_markdown(update.message, msg)
 
-    # Notify Admins in DM
+    # Notify Super Admin & Finance Admin in DM
     from services.auth_service import AuthService
-    admin_ids = AuthService.get_all_admin_ids()
+    admin_ids = AuthService.get_payment_admin_ids()
     if not admin_ids:
         admin_ids = [update.effective_user.id]
 
@@ -438,6 +438,7 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
         ]
     ])
 
+    sent_count = 0
     for admin_id in set(admin_ids):
         if admin_id:
             try:
@@ -448,9 +449,30 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
                     reply_markup=keyboard,
                     parse_mode="Markdown"
                 )
-                logger.info(f"Successfully sent payment review DM alert to Admin Telegram ID {admin_id}")
-            except Exception as e:
-                logger.warning(f"Could not send payment review DM to Admin Telegram ID {admin_id}: {e}")
+                sent_count += 1
+                logger.info(f"Successfully sent payment review photo alert to Admin Telegram ID {admin_id}")
+            except Exception as photo_err:
+                logger.warning(f"Could not send photo DM alert to Admin ID {admin_id}: {photo_err}. Attempting text fallback...")
+                try:
+                    plain_alert = admin_alert.replace("**", "").replace("`", "")
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=plain_alert,
+                        reply_markup=keyboard
+                    )
+                    sent_count += 1
+                    logger.info(f"Successfully sent text fallback payment review alert to Admin ID {admin_id}")
+                except Exception as msg_err:
+                    logger.error(
+                        f"Failed to deliver payment review notification to Admin ID {admin_id}: {msg_err}. "
+                        "Ensure the admin has started a DM chat with @FEGFPL_Bot by sending /start."
+                    )
+
+    if sent_count == 0:
+        logger.error(
+            "⚠️ CRITICAL: Payment notification could not be delivered to any Admin DM! "
+            "Please ensure Admin Telegram IDs are configured in .env and admins have pressed /start in DM with @FEGFPL_Bot."
+        )
 
     return ConversationHandler.END
 

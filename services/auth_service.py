@@ -25,10 +25,13 @@ class AuthService:
         and can access admin commands.
         """
         if telegram_id == settings.ADMIN_SUPER_ID:
+            cls.register_admin(telegram_id)
             return "SUPER_ADMIN"
         elif telegram_id == settings.ADMIN_FINANCE_ID:
+            cls.register_admin(telegram_id)
             return "FINANCE_ADMIN"
         elif telegram_id == settings.ADMIN_CONTENT_ID:
+            cls.register_admin(telegram_id)
             return "CONTENT_ADMIN"
 
         # Check registered dynamic admins
@@ -60,12 +63,43 @@ class AuthService:
         """
         Returns list of all active Telegram IDs that should receive Admin DM notifications.
         """
+        import os
         admin_set = set(_DYNAMIC_ADMIN_IDS)
         if settings.ADMIN_SUPER_ID:
             admin_set.add(settings.ADMIN_SUPER_ID)
         if settings.ADMIN_FINANCE_ID:
             admin_set.add(settings.ADMIN_FINANCE_ID)
-        return list(admin_set)
+        if settings.ADMIN_CONTENT_ID:
+            admin_set.add(settings.ADMIN_CONTENT_ID)
+
+        raw_env_ids = os.getenv("ADMIN_TELEGRAM_IDS", "")
+        if raw_env_ids:
+            for item in raw_env_ids.split(","):
+                item_str = item.strip()
+                if item_str.isdigit():
+                    admin_set.add(int(item_str))
+
+        return [aid for aid in admin_set if aid and aid > 0 and aid != 123456789]
+
+    @classmethod
+    def get_payment_admin_ids(cls) -> List[int]:
+        """
+        Returns list of Telegram IDs for Super Admin and Finance Admin ONLY
+        who are authorized to receive and review payment proof notifications.
+        Excludes Content Admins.
+        """
+        admin_set = set()
+        if settings.ADMIN_SUPER_ID:
+            admin_set.add(settings.ADMIN_SUPER_ID)
+        if settings.ADMIN_FINANCE_ID:
+            admin_set.add(settings.ADMIN_FINANCE_ID)
+
+        for aid in _DYNAMIC_ADMIN_IDS:
+            role = cls.get_admin_role(aid)
+            if role in ["SUPER_ADMIN", "FINANCE_ADMIN"]:
+                admin_set.add(aid)
+
+        return [aid for aid in admin_set if aid and aid > 0 and aid != 123456789]
 
     @staticmethod
     async def log_unauthorized_attempt(telegram_id: int, action: str, details: Optional[str] = None):
