@@ -161,6 +161,9 @@ async def auto_seed_production_users():
     """
     logger.info("Auto-seeding 11 approved member profiles on startup...")
 
+    # 1. Restore JSON backup first if available so custom admin updates are preserved
+    await BackupService.restore_members_from_json_if_needed()
+
     async with get_db_session() as session:
         for data in RESTORED_MEMBERS:
             tid = data["telegram_id"]
@@ -208,22 +211,16 @@ async def auto_seed_production_users():
                     cup_status="NOT_ACTIVE"
                 )
                 session.add(fpl_p)
-            else:
-                fpl_p.fpl_id = data["fpl_id"]
-                fpl_p.manager_name = data["manager_name"]
-                fpl_p.team_name = data["team_name"]
-                fpl_p.classic_status = "VERIFIED"
-                fpl_p.h2h_status = "VERIFIED"
 
-            # Payout Account
+            # Payout Account - ONLY create if not existing, NEVER overwrite updated bank numbers
             stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == user.id)
             payout_p = (await session.execute(stmt_p)).scalar_one_or_none()
 
-            raw_acc_num = data["account_number"]
-            enc_acc_num = encrypt_string(raw_acc_num)
-            masked_acc_num = mask_account_number(raw_acc_num)
-
             if not payout_p:
+                raw_acc_num = data["account_number"]
+                enc_acc_num = encrypt_string(raw_acc_num)
+                masked_acc_num = mask_account_number(raw_acc_num)
+
                 payout_p = PayoutAccount(
                     user_id=user.id,
                     bank_name=data["bank_name"],
@@ -232,11 +229,6 @@ async def auto_seed_production_users():
                     masked_account_number=masked_acc_num
                 )
                 session.add(payout_p)
-            else:
-                payout_p.bank_name = data["bank_name"]
-                payout_p.account_name = data["account_name"]
-                payout_p.encrypted_account_number = enc_acc_num
-                payout_p.masked_account_number = masked_acc_num
 
             # Payment Record
             stmt_pay = select(Payment).where(Payment.user_id == user.id)
@@ -249,12 +241,9 @@ async def auto_seed_production_users():
                     payment_status="APPROVED"
                 )
                 session.add(pay_p)
-            else:
-                pay_p.payment_status = "APPROVED"
 
         await session.commit()
         logger.info("Production member profile auto-seed completed successfully.")
         
-        # Restore JSON backup if existing, and write latest snapshot
-        await BackupService.restore_members_from_json_if_needed()
+        # Write latest snapshot
         await BackupService.backup_all_members_to_json()

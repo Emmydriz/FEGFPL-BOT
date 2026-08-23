@@ -465,22 +465,34 @@ async def admin_update_account_handler(update: Update, context: ContextTypes.DEF
 
         await session.commit()
 
-        # Update JSON file backup
         from services.backup_service import BackupService
         await BackupService.backup_all_members_to_json()
 
+        stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
+        fpl = (await session.execute(stmt_f)).scalar_one_or_none()
+
         full_dec = decrypt_string(payout.encrypted_account_number)
 
-        await safe_reply(
-            update.message,
-            f"✅ **MEMBER BANK ACCOUNT UPDATED!**\n\n"
-            f"• **Member:** {escape_markdown(user.full_name)} (`{user.feg_member_id}`)\n"
-            f"• **Telegram ID:** `{user.telegram_id}` (@{user.telegram_username or 'NoUsername'})\n"
+        msg = (
+            "✅ **MEMBER BANK ACCOUNT DETAILS UPDATED SUCCESSFULLY!** 🏦\n\n"
+            "👤 **MEMBER DETAILS:**\n"
+            f"• **Full Name:** {escape_markdown(user.full_name)}\n"
+            f"• **FEG Member ID:** `{user.feg_member_id}`\n"
+            f"• **Telegram ID:** `{user.telegram_id}` (@{escape_markdown(user.telegram_username or 'NoUsername')})\n"
+            f"• **Registration Status:** `{user.registration_status}`\n"
+            f"• **Membership Status:** `{user.membership_status}`\n\n"
+            "⚽ **FPL DETAILS:**\n"
+            f"• **FPL ID:** `{fpl.fpl_id if fpl else 'N/A'}`\n"
+            f"• **Manager:** {escape_markdown(fpl.manager_name) if fpl else 'N/A'}\n"
+            f"• **Team Name:** {escape_markdown(fpl.team_name) if fpl else 'N/A'}\n\n"
+            "🏦 **UPDATED PAYOUT BANK DETAILS:**\n"
             f"• **Bank Name:** {escape_markdown(payout.bank_name)}\n"
             f"• **Account Name:** {escape_markdown(payout.account_name)}\n"
-            f"• **Full Decrypted Account Number (Admin View):** `{full_dec}`\n"
-            f"• **Masked Account Number (Member View):** `{payout.masked_account_number}`"
+            f"• **Full Unmasked Account Number (Admin View):** `{full_dec}`\n"
+            f"• **Masked Account Number (Member View):** `{payout.masked_account_number}`\n\n"
+            "💾 *Successfully updated in database and synchronized to persistent JSON backup snapshot.*"
         )
+        await safe_reply(update.message, msg)
 
 
 @admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
