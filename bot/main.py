@@ -10,7 +10,9 @@ from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     CallbackQueryHandler,
-    ChatMemberHandler
+    ChatMemberHandler,
+    MessageHandler,
+    filters
 )
 from config.settings import settings
 from config.logging_config import logger
