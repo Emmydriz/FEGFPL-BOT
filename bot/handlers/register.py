@@ -545,6 +545,23 @@ async def renew_command_handler(update: Update, context: ContextTypes.DEFAULT_TY
         account_name = pay_cfg.account_name if pay_cfg else settings.FEG_PAYMENT_ACCOUNT_NAME
         account_number = pay_cfg.account_number if pay_cfg else settings.FEG_PAYMENT_ACCOUNT_NUMBER
 
+    from services.season_reminder_service import SeasonReminderService
+    dates = await SeasonReminderService.get_season_dates()
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    in_renewal_window = dates["reminder_start_dt"] <= now_utc <= dates["gw1_deadline_dt"]
+
+    # If member is ACTIVE and NOT in season renewal window, inform them nicely
+    if db_user and db_user.membership_status == "ACTIVE" and not in_renewal_window and db_user.renewal_payment_status != "PENDING_APPROVAL":
+        msg = (
+            "🟢 **YOUR MEMBERSHIP IS CURRENTLY ACTIVE** ⚽\n\n"
+            f"Hi **{db_user.full_name}**! Your FEG FPL membership for the **{db_user.current_season or '2026/2027'}** season is fully active.\n\n"
+            "ℹ️ **Season Renewal Notice:**\n"
+            "Annual membership renewals for the upcoming season officially open **5 weeks prior to the start of each new Premier League season** (3 weeks before the purge deadline, based on the official FPL API).\n\n"
+            "📢 The bot will automatically send you a direct message when the renewal window for the next season opens!"
+        )
+        await safe_send_markdown(update.message, msg)
+        return ConversationHandler.END
+
     context.user_data["is_renewal"] = True
 
     msg = (
