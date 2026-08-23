@@ -12,6 +12,9 @@ from config.logging_config import logger
 from sqlalchemy import select, func
 
 
+from bot.utils import escape_markdown
+
+
 @approved_member_required()
 async def member_profile_dashboard_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_tg = update.effective_user
@@ -60,19 +63,27 @@ async def member_profile_dashboard_handler(update: Update, context: ContextTypes
 
         ref_link = f"https://t.me/{bot_name}?start=ref_{user.referral_code}"
 
+        # Escape dynamic string fields to prevent Telegram Markdown parsing errors
+        safe_full_name = escape_markdown(user.full_name)
+        safe_tg_username = escape_markdown(user.telegram_username) if user.telegram_username else "NoUsername"
+        safe_manager_name = escape_markdown(manager_name)
+        safe_team_name = escape_markdown(team_name)
+        safe_bank_name = escape_markdown(bank_name)
+        safe_account_name = escape_markdown(account_name)
+
         msg = (
             "👤 **FEG MEMBER PROFILE & DASHBOARD**\n\n"
-            f"• **Full Name:** {user.full_name}\n"
+            f"• **Full Name:** {safe_full_name}\n"
             f"• **FEG Member ID:** `{user.feg_member_id}`\n"
             f"• **Registration Status:** `{user.registration_status}`\n"
-            f"• **Telegram ID:** `{user.telegram_id}` (@{user.telegram_username or 'NoUsername'})\n\n"
+            f"• **Telegram ID:** `{user.telegram_id}` (@{safe_tg_username})\n\n"
             "⚽ **FPL PROFILE:**\n"
             f"• **FPL ID:** `{fpl_id}`\n"
-            f"• **Manager:** {manager_name}\n"
-            f"• **Team Name:** {team_name}\n\n"
+            f"• **Manager:** {safe_manager_name}\n"
+            f"• **Team Name:** {safe_team_name}\n\n"
             "🏦 **PAYOUT BANK ACCOUNT:**\n"
-            f"• **Bank:** {bank_name}\n"
-            f"• **Account Name:** {account_name}\n"
+            f"• **Bank:** {safe_bank_name}\n"
+            f"• **Account Name:** {safe_account_name}\n"
             f"• **Account Number:** `{account_number}`\n\n"
             "👥 **REFERRALS & REWARDS:**\n"
             f"• **Referral Code:** `{user.referral_code}`\n"
@@ -94,11 +105,9 @@ async def member_profile_dashboard_handler(update: Update, context: ContextTypes
                 await update.message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown")
         except Exception as err:
             logger.error(f"Markdown error in member_profile_dashboard_handler: {err}")
-            plain_msg = msg.replace("**", "").replace("`", "")
-            if update.callback_query:
-                await update.callback_query.message.reply_text(plain_msg, reply_markup=keyboard)
-            else:
-                await update.message.reply_text(plain_msg, reply_markup=keyboard)
+            plain_msg = msg.replace("**", "").replace("`", "").replace("\\", "")
+            target_msg = update.callback_query.message if update.callback_query else update.message
+            await target_msg.reply_text(plain_msg, reply_markup=keyboard)
 
 
 @approved_member_required()
