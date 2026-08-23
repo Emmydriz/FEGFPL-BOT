@@ -415,151 +415,358 @@ async def admin_update_member_handler(update: Update, context: ContextTypes.DEFA
         )
 
 
+(
+    STATE_WAIT_IDENTIFIER,
+    STATE_WAIT_CHOICE,
+    STATE_WAIT_ACC_NUM,
+    STATE_WAIT_BANK_NAME,
+    STATE_WAIT_BOTH_ACC_NUM,
+    STATE_WAIT_BOTH_BANK_NAME
+) = range(6)
+
+
+async def _lookup_member_for_update(session, identifier: str) -> Optional[User]:
+    if not identifier:
+        return None
+    target = identifier.strip()
+    if target.isdigit():
+        u = await MemberService.get_user_by_telegram_id(session, int(target))
+        if u:
+            return u
+
+    stmt_m = select(User).where(User.feg_member_id == target.upper())
+    u = (await session.execute(stmt_m)).scalar_one_or_none()
+    if u:
+        return u
+
+    if target.isdigit():
+        padded_id = f"FEG-2026-{int(target):06d}"
+        stmt_p = select(User).where(User.feg_member_id == padded_id)
+        u = (await session.execute(stmt_p)).scalar_one_or_none()
+        if u:
+            return u
+
+    clean_un = target.replace("@", "").strip()
+    stmt_u = select(User).where(User.telegram_username.ilike(clean_un))
+    u = (await session.execute(stmt_u)).scalar_one_or_none()
+    if u:
+        return u
+
+    stmt_f = select(User).where(User.full_name.ilike(f"%{target}%"))
+    return (await session.execute(stmt_f)).scalars().first()
+
+
+async def _show_state2_choice_prompt(target_msg, user: User, bank_name: str, acc_num: str):
+    msg = (
+        f"Member found: **{user.full_name}** (`{user.feg_member_id}`)\n"
+        "Current account details:\n"
+        f"Bank Name: **{bank_name}**\n"
+        f"Account Number: `{acc_num}`\n\n"
+        "What would you like to update?\n"
+        "1. Account Number\n"
+        "2. Bank Name\n"
+        "3. Both"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("1️⃣ Account Number", callback_data="update_opt_1"), InlineKeyboardButton("2️⃣ Bank Name", callback_data="update_opt_2")],
+        [InlineKeyboardButton("3️⃣ Both", callback_data="update_opt_3")],
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_update_account")]
+    ])
+    await safe_reply(target_msg, msg, reply_markup=keyboard)
+
+
 @admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
-async def admin_update_account_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_update_account_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     full_text = update.message.text.strip()
     cmd_name = full_text.split()[0]
     raw_args = full_text[len(cmd_name):].strip()
 
-    if "|" in raw_args:
-        parts = [p.strip() for p in raw_args.split("|") if p.strip()]
-    else:
-        parts = raw_args.split()
+    if raw_args:
+        async with get_db_session() as session:
+            user = await _lookup_member_for_update(session, raw_args)
+            if user:
+                stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == user.id)
+                payout = (await session.execute(stmt_p)).scalar_one_or_none()
+                dec_acc = "Not set"
+                if payout and payout.encrypted_account_number:
+                    try:
+                        dec_acc = decrypt_string(payout.encrypted_account_number)
+                    except Exception:
+                        dec_acc = payout.masked_account_number or "Not set"
 
-    if len(parts) < 2:
-        await safe_reply(
-            update.message,
-            "⚠️ **USAGE:**\n`/update_bank_details <MemberID_or_TelegramID> <Account_Number> [Bank_Name] [Account_Name]`\n\n"
-            "**Examples:**\n"
-            "• `/update_bank_details FEG-2026-000001 | 8066106785 | Opay | Ilesanmi Emmanuel Eniola`\n"
-            "• `/update_bank_details FEG-2026-000001 8066106785`\n"
-            "• `/update_account 6948840492 8066106785 Opay \"Ilesanmi Emmanuel Eniola\"`"
-        )
-        return
+                b_name = payout.bank_name if payout else "Palmpay"
+                context.user_data["update_target_user_id"] = user.id
+                context.user_data["old_bank_name"] = b_name
+                context.user_data["old_acc_num"] = dec_acc
 
-    target_id = parts[0].strip()
-    acc_num = parts[1].strip()
-    bank_name = parts[2].strip() if len(parts) > 2 else None
-    acc_name = " ".join(parts[3:]).strip() if len(parts) > 3 else None
+                await _show_state2_choice_prompt(update.message, user, b_name, dec_acc)
+                return STATE_WAIT_CHOICE
+
+    await safe_reply(
+        update.message,
+        "Please send the member's Telegram username (e.g. @username) or Telegram ID to update their account details."
+    )
+    return STATE_WAIT_IDENTIFIER
+
+
+async def update_account_identifier_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    target = update.message.text.strip()
+    if target.startswith("/cancel"):
+        return await cancel_update_account_flow(update, context)
 
     async with get_db_session() as session:
-        user = None
-        if target_id.isdigit():
-            user = await MemberService.get_user_by_telegram_id(session, int(target_id))
+        user = await _lookup_member_for_update(session, target)
+        if not user:
+            await safe_reply(
+                update.message,
+                "No member found with that username/ID. Please check and try again, or send /cancel to stop."
+            )
+            return STATE_WAIT_IDENTIFIER
+
+        stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == user.id)
+        payout = (await session.execute(stmt_p)).scalar_one_or_none()
+        dec_acc = "Not set"
+        if payout and payout.encrypted_account_number:
+            try:
+                dec_acc = decrypt_string(payout.encrypted_account_number)
+            except Exception:
+                dec_acc = payout.masked_account_number or "Not set"
+
+        b_name = payout.bank_name if payout else "Palmpay"
+        context.user_data["update_target_user_id"] = user.id
+        context.user_data["old_bank_name"] = b_name
+        context.user_data["old_acc_num"] = dec_acc
+
+        await _show_state2_choice_prompt(update.message, user, b_name, dec_acc)
+        return STATE_WAIT_CHOICE
+
+
+async def update_account_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    choice = None
+    target_msg = update.message
+    if update.callback_query:
+        await update.callback_query.answer()
+        cb = update.callback_query.data
+        target_msg = update.callback_query.message
+        if cb == "update_opt_1":
+            choice = "1"
+        elif cb == "update_opt_2":
+            choice = "2"
+        elif cb == "update_opt_3":
+            choice = "3"
+        elif cb == "cancel_update_account":
+            return await cancel_update_account_flow(update, context)
+    elif update.message and update.message.text:
+        text_choice = update.message.text.strip()
+        if text_choice.startswith("/cancel"):
+            return await cancel_update_account_flow(update, context)
+        if text_choice in ["1", "2", "3"]:
+            choice = text_choice
+
+    user_id = context.user_data.get("update_target_user_id")
+    async with get_db_session() as session:
+        stmt = select(User).where(User.id == user_id)
+        user = (await session.execute(stmt)).scalar_one_or_none()
+
+    member_name = user.full_name if user else "the member"
+
+    if choice == "1":
+        await safe_reply(target_msg, f"Please send the new account number for {member_name}.")
+        return STATE_WAIT_ACC_NUM
+    elif choice == "2":
+        await safe_reply(target_msg, f"Please send the new bank name for {member_name}.")
+        return STATE_WAIT_BANK_NAME
+    elif choice == "3":
+        await safe_reply(target_msg, f"Please send the new account number for {member_name}.")
+        return STATE_WAIT_BOTH_ACC_NUM
+    else:
+        await safe_reply(target_msg, "Invalid selection. Please reply with 1, 2, or 3, or click one of the buttons below.")
+        return STATE_WAIT_CHOICE
+
+
+async def _save_and_confirm_account_update(update: Update, context: ContextTypes.DEFAULT_TYPE, new_bank: Optional[str], new_acc: Optional[str]):
+    user_id = context.user_data.get("update_target_user_id")
+    admin_id = update.effective_user.id
+
+    async with get_db_session() as session:
+        stmt_u = select(User).where(User.id == user_id)
+        user = (await session.execute(stmt_u)).scalar_one_or_none()
 
         if not user:
-            tid_upper = target_id.upper()
-            stmt = select(User).where(User.feg_member_id == tid_upper)
-            user = (await session.execute(stmt)).scalar_one_or_none()
-
-        if not user and target_id.isdigit():
-            padded_feg_id = f"FEG-2026-{int(target_id):06d}"
-            stmt = select(User).where(User.feg_member_id == padded_feg_id)
-            user = (await session.execute(stmt)).scalar_one_or_none()
-
-        if not user:
-            clean_name = target_id.replace("@", "").strip()
-            stmt = select(User).where(User.telegram_username.ilike(clean_name))
-            user = (await session.execute(stmt)).scalar_one_or_none()
-
-        if not user:
-            stmt = select(User).where(User.full_name.ilike(f"%{target_id}%"))
-            user = (await session.execute(stmt)).scalars().first()
-
-        if not user:
-            await safe_reply(update.message, f"❌ Member '{target_id}' not found in database. Search by FEG ID, Telegram ID, Username, or Full Name.")
-            return
+            await safe_reply(update.message, "❌ Member record missing from database.")
+            return ConversationHandler.END
 
         stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == user.id)
         payout = (await session.execute(stmt_p)).scalar_one_or_none()
 
-        enc_num = encrypt_string(acc_num)
-        masked_num = mask_account_number(acc_num)
-        b_name = bank_name or (payout.bank_name if payout else "Palmpay")
-        a_name = acc_name or (payout.account_name if payout else user.full_name)
+        old_bank = payout.bank_name if payout else "N/A"
+        old_acc_dec = "N/A"
+        if payout and payout.encrypted_account_number:
+            try:
+                old_acc_dec = decrypt_string(payout.encrypted_account_number)
+            except Exception:
+                old_acc_dec = payout.masked_account_number or "N/A"
+
+        final_bank = new_bank.strip() if new_bank else old_bank
+        final_acc = new_acc.strip() if new_acc else old_acc_dec
+
+        enc_acc = encrypt_string(final_acc)
+        masked_acc = mask_account_number(final_acc)
 
         if not payout:
             payout = PayoutAccount(
                 user_id=user.id,
-                bank_name=b_name,
-                account_name=a_name,
-                encrypted_account_number=enc_num,
-                masked_account_number=masked_num
+                bank_name=final_bank,
+                account_name=user.full_name,
+                encrypted_account_number=enc_acc,
+                masked_account_number=masked_acc
             )
             session.add(payout)
         else:
-            payout.bank_name = b_name
-            payout.account_name = a_name
-            payout.encrypted_account_number = enc_num
-            payout.masked_account_number = masked_num
+            payout.bank_name = final_bank
+            payout.encrypted_account_number = enc_acc
+            payout.masked_account_number = masked_acc
 
         await session.commit()
 
+        # Sync persistent JSON backup
         from services.backup_service import BackupService
         await BackupService.backup_all_members_to_json()
 
-        stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
-        fpl = (await session.execute(stmt_f)).scalar_one_or_none()
-
-        try:
-            full_dec = decrypt_string(payout.encrypted_account_number)
-        except Exception:
-            full_dec = acc_num
-
-        fpl_id_str = str(fpl.fpl_id) if fpl else "N/A"
-        mgr_name = fpl.manager_name if fpl else "N/A"
-        team_name = fpl.team_name if fpl else "N/A"
-        admin_user = update.effective_user
-
-        msg = (
-            "✅ **MEMBER BANK ACCOUNT DETAILS UPDATED SUCCESSFULLY!** 🏦\n\n"
-            "👤 **MEMBER DETAILS:**\n"
-            f"• **Full Name:** {escape_markdown(user.full_name)}\n"
-            f"• **FEG Member ID:** `{user.feg_member_id}`\n"
-            f"• **Telegram ID:** `{user.telegram_id}` (@{escape_markdown(user.telegram_username or 'NoUsername')})\n"
-            f"• **Registration Status:** `{user.registration_status}`\n"
-            f"• **Membership Status:** `{user.membership_status}`\n\n"
-            "⚽ **FPL DETAILS:**\n"
-            f"• **FPL ID:** `{fpl_id_str}`\n"
-            f"• **Manager:** {escape_markdown(mgr_name)}\n"
-            f"• **Team Name:** {escape_markdown(team_name)}\n\n"
-            "🏦 **UPDATED PAYOUT BANK DETAILS:**\n"
-            f"• **Bank Name:** {escape_markdown(payout.bank_name)}\n"
-            f"• **Account Name:** {escape_markdown(payout.account_name)}\n"
-            f"• **Full Unmasked Account Number (Admin View):** `{full_dec}`\n"
-            f"• **Masked Account Number (Member View):** `{payout.masked_account_number}`\n\n"
-            "💾 *Successfully updated in database and synchronized to persistent JSON backup snapshot.*"
-        )
-        await safe_reply(update.message, msg)
-
-        # DM alert broadcast to payment admins
-        from services.auth_service import AuthService
-        admin_ids = AuthService.get_payment_admin_ids()
-
-        admin_dm_msg = (
-            "🔔 **ADMIN NOTIFICATION: MEMBER BANK DETAILS UPDATED** 🏦\n\n"
-            "👤 **MEMBER DETAILS:**\n"
-            f"• **Full Name:** {user.full_name}\n"
-            f"• **FEG Member ID:** `{user.feg_member_id}`\n"
-            f"• **Telegram ID:** `{user.telegram_id}` (@{user.telegram_username or 'NoUsername'})\n\n"
-            "🏦 **NEW PAYOUT BANK DETAILS:**\n"
-            f"• **Bank:** {payout.bank_name}\n"
-            f"• **Account Name:** {payout.account_name}\n"
-            f"• **Full Decrypted Account Number:** `{full_dec}`\n"
-            f"• **Masked Account Number:** `{payout.masked_account_number}`\n\n"
-            f"✍️ **Updated By Admin:** @{admin_user.username or 'Admin'} (`{admin_user.id}`)"
+        # Audit log recording unmasked old vs new values
+        role = AuthService.get_admin_role(admin_id) or "ADMIN"
+        await add_audit_log(
+            session=session,
+            admin_id=admin_id,
+            role=role,
+            action="UPDATE_MEMBER_ACCOUNT",
+            target=f"{user.full_name} ({user.feg_member_id})",
+            details=f"Updated Bank Details. Old: [Bank: {old_bank}, Account: {old_acc_dec}] -> New: [Bank: {final_bank}, Account: {final_acc}]"
         )
 
-        for admin_id in admin_ids:
-            if admin_id != admin_user.id:
-                try:
-                    await context.bot.send_message(
-                        chat_id=admin_id,
-                        text=admin_dm_msg,
-                        parse_mode="Markdown"
-                    )
-                except Exception as ex:
-                    logger.warning(f"Could not send bank update DM alert to admin {admin_id}: {ex}")
+    # State 4 Confirmation
+    msg = (
+        f"Account details updated successfully for **{user.full_name}**.\n\n"
+        f"🏦 **Bank Name:** {final_bank}\n"
+        f"🔢 **Account Number:** `{final_acc}`"
+    )
+    await safe_reply(update.message, msg)
+
+    # Broadcast update notification to all payment admins in DM
+    from services.auth_service import AuthService
+    admin_ids = AuthService.get_payment_admin_ids()
+
+    admin_dm_msg = (
+        "🔔 **ADMIN NOTIFICATION: MEMBER BANK DETAILS UPDATED** 🏦\n\n"
+        "👤 **MEMBER DETAILS:**\n"
+        f"• **Full Name:** {user.full_name}\n"
+        f"• **FEG Member ID:** `{user.feg_member_id}`\n"
+        f"• **Telegram ID:** `{user.telegram_id}` (@{user.telegram_username or 'NoUsername'})\n\n"
+        "🏦 **NEW PAYOUT BANK DETAILS:**\n"
+        f"• **Bank:** {final_bank}\n"
+        f"• **Account Name:** {payout.account_name if payout else user.full_name}\n"
+        f"• **Account Number:** `{final_acc}`\n\n"
+        f"✍️ **Updated By Admin:** @{update.effective_user.username or 'Admin'} (`{admin_id}`)"
+    )
+
+    for aid in admin_ids:
+        if aid != admin_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=aid,
+                    text=admin_dm_msg,
+                    parse_mode="Markdown"
+                )
+            except Exception as ex:
+                logger.warning(f"Could not send bank update DM alert to admin {aid}: {ex}")
+
+    return ConversationHandler.END
+
+
+async def update_account_acc_num_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text.startswith("/cancel"):
+        return await cancel_update_account_flow(update, context)
+
+    clean_acc = text.replace("-", "").replace(" ", "")
+    if not clean_acc.isdigit() or len(clean_acc) != 10:
+        await safe_reply(update.message, "That doesn't look like a valid account number. Please try again, or send /cancel to stop.")
+        return STATE_WAIT_ACC_NUM
+
+    return await _save_and_confirm_account_update(update, context, new_bank=None, new_acc=clean_acc)
+
+
+async def update_account_bank_name_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text.startswith("/cancel"):
+        return await cancel_update_account_flow(update, context)
+
+    return await _save_and_confirm_account_update(update, context, new_bank=text, new_acc=None)
+
+
+async def update_account_both_acc_num_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text.startswith("/cancel"):
+        return await cancel_update_account_flow(update, context)
+
+    clean_acc = text.replace("-", "").replace(" ", "")
+    if not clean_acc.isdigit() or len(clean_acc) != 10:
+        await safe_reply(update.message, "That doesn't look like a valid account number. Please try again, or send /cancel to stop.")
+        return STATE_WAIT_BOTH_ACC_NUM
+
+    context.user_data["new_acc_num_both"] = clean_acc
+
+    user_id = context.user_data.get("update_target_user_id")
+    async with get_db_session() as session:
+        stmt = select(User).where(User.id == user_id)
+        user = (await session.execute(stmt)).scalar_one_or_none()
+
+    member_name = user.full_name if user else "the member"
+    await safe_reply(update.message, f"Please send the new bank name for {member_name}.")
+    return STATE_WAIT_BOTH_BANK_NAME
+
+
+async def update_account_both_bank_name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text.startswith("/cancel"):
+        return await cancel_update_account_flow(update, context)
+
+    new_acc = context.user_data.get("new_acc_num_both")
+    return await _save_and_confirm_account_update(update, context, new_bank=text, new_acc=new_acc)
+
+
+async def cancel_update_account_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    target_msg = update.callback_query.message if update.callback_query else update.message
+    if update.callback_query:
+        await update.callback_query.answer()
+    await safe_reply(target_msg, "❌ Account details update flow cancelled.")
+    return ConversationHandler.END
+
+
+def get_admin_update_account_conversation_handler() -> ConversationHandler:
+    return ConversationHandler(
+        entry_points=[
+            CommandHandler("updateaccount", start_update_account_flow),
+            CommandHandler("update_account", start_update_account_flow),
+            CommandHandler("update_bank_details", start_update_account_flow),
+            CommandHandler("update_bank", start_update_account_flow)
+        ],
+        states={
+            STATE_WAIT_IDENTIFIER: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_account_identifier_handler)],
+            STATE_WAIT_CHOICE: [
+                CallbackQueryHandler(update_account_choice_handler, pattern="^(update_opt_|cancel_update_account)"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, update_account_choice_handler)
+            ],
+            STATE_WAIT_ACC_NUM: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_account_acc_num_only_handler)],
+            STATE_WAIT_BANK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_account_bank_name_only_handler)],
+            STATE_WAIT_BOTH_ACC_NUM: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_account_both_acc_num_handler)],
+            STATE_WAIT_BOTH_BANK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, update_account_both_bank_name_handler)]
+        },
+        fallbacks=[
+            CommandHandler("cancel", cancel_update_account_flow),
+            CallbackQueryHandler(cancel_update_account_flow, pattern="^cancel_update_account$")
+        ]
+    )
 
 
 @admin_required("SUPER_ADMIN", "FINANCE_ADMIN")

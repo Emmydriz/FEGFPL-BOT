@@ -37,7 +37,7 @@ from bot.handlers.admin import (
     admin_audit_logs_handler,
     view_member_detail_callback,
     admin_update_member_handler,
-    admin_update_account_handler,
+    get_admin_update_account_conversation_handler,
     admin_start_new_season_handler,
     admin_purge_unrenewed_handler,
     admin_confirm_purge_callback,
@@ -142,7 +142,7 @@ async def post_init(application):
         BotCommand("payments", "Review pending payments (Admin)"),
         BotCommand("members", "Browse community members (Admin)"),
         BotCommand("search_member", "Inspect member details (Admin)"),
-        BotCommand("update_bank_details", "Update member bank details (Admin)"),
+        BotCommand("updateaccount", "Update member bank account details (Admin)"),
         BotCommand("start_new_season", "Initialize new season & deadlines (Admin)"),
         BotCommand("purge_unrenewed", "Purge unrenewed members (Admin)"),
         BotCommand("record_hall_of_fame", "Record permanent season winner (Admin)"),
@@ -176,6 +176,9 @@ def build_app():
 
     # Registration Conversation Handler
     app.add_handler(get_registration_conversation_handler())
+
+    # Admin Update Account Conversation Handler
+    app.add_handler(get_admin_update_account_conversation_handler())
 
     # Common & Member Commands
     app.add_handler(CommandHandler("start", start_handler))
@@ -242,9 +245,6 @@ def build_app():
     app.add_handler(CommandHandler("member", search_member_admin_handler))
     app.add_handler(CommandHandler("admin_update_member", admin_update_member_handler))
     app.add_handler(CommandHandler("update_member", admin_update_member_handler))
-    app.add_handler(CommandHandler("update_account", admin_update_account_handler))
-    app.add_handler(CommandHandler("update_bank", admin_update_account_handler))
-    app.add_handler(CommandHandler("update_bank_details", admin_update_account_handler))
     app.add_handler(CommandHandler("start_new_season", admin_start_new_season_handler))
     app.add_handler(CommandHandler("purge_unrenewed", admin_purge_unrenewed_handler))
     app.add_handler(CommandHandler("record_hall_of_fame", admin_record_hall_of_fame_handler))
