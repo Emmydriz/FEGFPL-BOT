@@ -404,6 +404,73 @@ async def admin_update_member_handler(update: Update, context: ContextTypes.DEFA
         )
 
 
+@admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
+async def export_members_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    target_msg = update.callback_query.message if update.callback_query else update.message
+    await safe_reply(target_msg, "📊 **GENERATING FULL FEG MEMBER DATABASE EXPORT (CSV)...**")
+
+    async with get_db_session() as session:
+        stmt = select(User).order_by(User.id.asc())
+        res = await session.execute(stmt)
+        users = res.scalars().all()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "FEG Member ID", "Full Name", "Telegram ID", "Telegram Username",
+            "Registration Status", "FPL ID", "Manager Name", "Team Name",
+            "Classic Status", "H2H Status", "Bank Name", "Account Name",
+            "Decrypted Account Number", "Referral Code", "Invites Count", "Joined Date"
+        ])
+
+        for u in users:
+            stmt_f = select(FPLProfile).where(FPLProfile.user_id == u.id)
+            fpl = (await session.execute(stmt_f)).scalar_one_or_none()
+
+            stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == u.id)
+            payout = (await session.execute(stmt_p)).scalar_one_or_none()
+
+            dec_num = "N/A"
+            if payout and payout.encrypted_account_number:
+                try:
+                    dec_num = decrypt_string(payout.encrypted_account_number)
+                except Exception:
+                    dec_num = payout.masked_account_number or "N/A"
+
+            stmt_ref = select(func.count(Referral.id)).where(Referral.referrer_user_id == u.id)
+            ref_count = (await session.execute(stmt_ref)).scalar() or 0
+
+            writer.writerow([
+                u.feg_member_id,
+                u.full_name,
+                u.telegram_id,
+                u.telegram_username or "N/A",
+                u.registration_status,
+                fpl.fpl_id if fpl else "N/A",
+                fpl.manager_name if fpl else "N/A",
+                fpl.team_name if fpl else "N/A",
+                fpl.classic_status if fpl else "N/A",
+                fpl.h2h_status if fpl else "N/A",
+                payout.bank_name if payout else "N/A",
+                payout.account_name if payout else "N/A",
+                dec_num,
+                u.referral_code,
+                ref_count,
+                u.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            ])
+
+        csv_bytes = output.getvalue().encode("utf-8")
+        bio = io.BytesIO(csv_bytes)
+        bio.name = "feg_members_database_export.csv"
+
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=bio,
+            filename="feg_members_database_export.csv",
+            caption=f"📊 **FEG MEMBER DATABASE EXPORT COMPLETE**\nTotal Members Exported: `{len(users)}`"
+        )
+
+
 @admin_required()
 async def admin_pending_payments_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
