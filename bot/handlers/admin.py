@@ -642,14 +642,29 @@ async def process_and_restore_member_from_text(msg, target_msg, text: str):
             payout_p.masked_account_number = masked_num
 
         await session.commit()
-        await safe_reply(
-            msg,
-            f"✅ **MEMBER RECORD PARSED & RESTORED!**\n\n"
-            f"• **Member:** {escape_markdown(user.full_name)} (`{user.feg_member_id}`)\n"
-            f"• **Telegram ID:** `{user.telegram_id}` (@{user.telegram_username or 'NoUsername'})\n"
+        full_acc_num = anum
+        if payout_p and payout_p.encrypted_account_number:
+            try:
+                full_acc_num = decrypt_string(payout_p.encrypted_account_number)
+            except Exception:
+                full_acc_num = anum
+
+        card = (
+            "✅ **MEMBER RECORD PARSED & RESTORED!**\n\n"
+            "👤 **MEMBER DETAILS:**\n"
+            f"• **Full Name:** {escape_markdown(user.full_name)}\n"
+            f"• **FEG Member ID:** `{user.feg_member_id}`\n"
+            f"• **Telegram:** @{escape_markdown(user.telegram_username or 'NoUsername')} (`{user.telegram_id}`)\n\n"
+            "⚽️ **FPL DETAILS:**\n"
             f"• **FPL ID:** `{fpl_id or (fpl_p.fpl_id if fpl_p else 'Not set')}`\n"
-            f"• **Bank Account:** {escape_markdown(bname)} / {escape_markdown(aname)} / `{masked_num}`"
+            f"• **Manager:** {escape_markdown(fpl_p.manager_name if fpl_p else user.full_name)}\n"
+            f"• **Team:** {escape_markdown(fpl_p.team_name if fpl_p else 'FEG FC')}\n\n"
+            "🏦 **PAYOUT BANK DETAILS:**\n"
+            f"• **Bank:** {escape_markdown(bname)}\n"
+            f"• **Account Name:** {escape_markdown(aname)}\n"
+            f"• **Account Number:** `{full_acc_num}`"
         )
+        await safe_reply(msg, card)
 
 
 @admin_required()
