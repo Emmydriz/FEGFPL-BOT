@@ -440,18 +440,34 @@ async def admin_update_account_handler(update: Update, context: ContextTypes.DEF
     target_id = parts[0].strip()
     acc_num = parts[1].strip()
     bank_name = parts[2].strip() if len(parts) > 2 else None
-    acc_name = parts[3].strip() if len(parts) > 3 else None
+    acc_name = " ".join(parts[3:]).strip() if len(parts) > 3 else None
 
     async with get_db_session() as session:
         user = None
         if target_id.isdigit():
             user = await MemberService.get_user_by_telegram_id(session, int(target_id))
+
         if not user:
-            stmt = select(User).where(User.feg_member_id == target_id.upper())
+            tid_upper = target_id.upper()
+            stmt = select(User).where(User.feg_member_id == tid_upper)
+            user = (await session.execute(stmt)).scalar_one_or_none()
+
+        if not user and target_id.isdigit():
+            padded_feg_id = f"FEG-2026-{int(target_id):06d}"
+            stmt = select(User).where(User.feg_member_id == padded_feg_id)
             user = (await session.execute(stmt)).scalar_one_or_none()
 
         if not user:
-            await safe_reply(update.message, f"❌ Member '{target_id}' not found in database.")
+            clean_name = target_id.replace("@", "").strip()
+            stmt = select(User).where(User.telegram_username.ilike(clean_name))
+            user = (await session.execute(stmt)).scalar_one_or_none()
+
+        if not user:
+            stmt = select(User).where(User.full_name.ilike(f"%{target_id}%"))
+            user = (await session.execute(stmt)).scalars().first()
+
+        if not user:
+            await safe_reply(update.message, f"❌ Member '{target_id}' not found in database. Search by FEG ID, Telegram ID, Username, or Full Name.")
             return
 
         stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == user.id)

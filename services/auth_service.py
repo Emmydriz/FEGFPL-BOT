@@ -18,24 +18,26 @@ class AuthService:
 
     @classmethod
     def get_admin_role(cls, telegram_id: int) -> Optional[str]:
-        if telegram_id == settings.ADMIN_SUPER_ID or telegram_id == 1703339441:
+        # Production Super Admins
+        super_admins = {settings.ADMIN_SUPER_ID, 1703339441, 6948840492, 123456789}
+        if telegram_id in super_admins:
             cls.register_admin(telegram_id)
             return "SUPER_ADMIN"
-        elif telegram_id == settings.ADMIN_FINANCE_ID or telegram_id == 2142855199:
+
+        # Production Finance Admins
+        finance_admins = {settings.ADMIN_FINANCE_ID, 2142855199, 2112337065}
+        if telegram_id in finance_admins:
             cls.register_admin(telegram_id)
             return "FINANCE_ADMIN"
-        elif telegram_id == settings.ADMIN_CONTENT_ID or telegram_id == 7017254512:
+
+        # Production Content Admins
+        content_admins = {settings.ADMIN_CONTENT_ID, 7017254512, 7413474541}
+        if telegram_id in content_admins:
             cls.register_admin(telegram_id)
             return "CONTENT_ADMIN"
 
         # Check registered dynamic admins
         if telegram_id in _DYNAMIC_ADMIN_IDS:
-            return "SUPER_ADMIN"
-
-        # Developer / Testing Auto-Promotion Mode:
-        if settings.ADMIN_SUPER_ID == 123456789:
-            cls.register_admin(telegram_id)
-            logger.info(f"Auto-promoted Telegram ID {telegram_id} to SUPER_ADMIN for testing/development.")
             return "SUPER_ADMIN"
 
         return None
