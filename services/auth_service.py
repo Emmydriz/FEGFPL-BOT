@@ -148,7 +148,12 @@ def approved_member_required():
                 from services.member_service import MemberService
                 user = await MemberService.get_user_by_telegram_id(session, user_tg.id)
 
-                if not user or user.registration_status not in ["APPROVED", "COMMUNITY_ACCESS_GRANTED"]:
+                is_member_approved = user and (
+                    user.registration_status in ["APPROVED", "COMMUNITY_ACCESS_GRANTED"] or
+                    user.membership_status in ["ACTIVE", "PENDING_RENEWAL"]
+                )
+
+                if not is_member_approved:
                     # Automatic Community Group Member Restoration Check
                     if settings.FEG_COMMUNITY_CHAT_ID and context.bot:
                         try:
