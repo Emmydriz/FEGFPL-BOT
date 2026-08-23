@@ -287,11 +287,14 @@ async def render_full_member_profile(update: Update, context: ContextTypes.DEFAU
     payout = (await session.execute(stmt_payout)).scalar_one_or_none()
 
     decrypted_acc_num = "Not set"
-    if payout and payout.encrypted_account_number:
-        try:
-            decrypted_acc_num = decrypt_string(payout.encrypted_account_number)
-        except Exception:
-            decrypted_acc_num = payout.masked_account_number or "Not set"
+    masked_acc_num = "Not set"
+    if payout:
+        masked_acc_num = payout.masked_account_number or "Not set"
+        if payout.encrypted_account_number:
+            try:
+                decrypted_acc_num = decrypt_string(payout.encrypted_account_number)
+            except Exception:
+                decrypted_acc_num = masked_acc_num
 
     stmt_ref = select(func.count(Referral.id)).where(Referral.referrer_user_id == user.id)
     ref_count = (await session.execute(stmt_ref)).scalar() or 0
@@ -300,6 +303,8 @@ async def render_full_member_profile(update: Update, context: ContextTypes.DEFAU
         "👤 **FULL MEMBER ADMINISTRATIVE PROFILE**\n\n"
         f"• **Full Name:** {user.full_name}\n"
         f"• **FEG Member ID:** `{user.feg_member_id}`\n"
+        f"• **Current Season:** `{user.current_season or '2026/2027'}`\n"
+        f"• **Membership Status:** `{user.membership_status}`\n"
         f"• **Registration Status:** `{user.registration_status}`\n"
         f"• **Telegram ID:** `{user.telegram_id}` (@{user.telegram_username or 'NoUsername'})\n"
         f"• **Joined Date:** {user.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC\n\n"
@@ -310,7 +315,8 @@ async def render_full_member_profile(update: Update, context: ContextTypes.DEFAU
         "🏦 **PAYOUT BANK DETAILS (FOR PRIZE DISBURSEMENT):**\n"
         f"• **Bank:** {payout.bank_name if payout else 'N/A'}\n"
         f"• **Account Name:** {payout.account_name if payout else 'N/A'}\n"
-        f"• **Decrypted Account Number:** `{decrypted_acc_num}`\n\n"
+        f"• **Full Unmasked Account Number (Admin View):** `{decrypted_acc_num}`\n"
+        f"• **Masked Account Number (Member View):** `{masked_acc_num}`\n\n"
         "👥 **REFERRALS:**\n"
         f"• **Referral Code:** `{user.referral_code}`\n"
         f"• **Total Referred Members:** `{ref_count}`"
@@ -409,16 +415,24 @@ async def admin_update_member_handler(update: Update, context: ContextTypes.DEFA
         )
 
 
+@admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
 async def admin_update_account_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.replace("/update_account", "").replace("/update_bank", "").strip()
-    parts = text.split()
+    full_text = update.message.text.strip()
+    cmd_name = full_text.split()[0]
+    raw_args = full_text[len(cmd_name):].strip()
+
+    if "|" in raw_args:
+        parts = [p.strip() for p in raw_args.split("|") if p.strip()]
+    else:
+        parts = raw_args.split()
 
     if len(parts) < 2:
         await safe_reply(
             update.message,
-            "⚠️ **USAGE:**\n`/update_account <MemberID_or_TelegramID> <Account_Number> [Bank_Name] [Account_Name]`\n\n"
+            "⚠️ **USAGE:**\n`/update_bank_details <MemberID_or_TelegramID> <Account_Number> [Bank_Name] [Account_Name]`\n\n"
             "**Examples:**\n"
-            "• `/update_account FEG-2026-000001 8066106785`\n"
+            "• `/update_bank_details FEG-2026-000001 | 8066106785 | Opay | Ilesanmi Emmanuel Eniola`\n"
+            "• `/update_bank_details FEG-2026-000001 8066106785`\n"
             "• `/update_account 6948840492 8066106785 Opay \"Ilesanmi Emmanuel Eniola\"`"
         )
         return
@@ -426,7 +440,7 @@ async def admin_update_account_handler(update: Update, context: ContextTypes.DEF
     target_id = parts[0].strip()
     acc_num = parts[1].strip()
     bank_name = parts[2].strip() if len(parts) > 2 else None
-    acc_name = " ".join(parts[3:]).strip() if len(parts) > 3 else None
+    acc_name = parts[3].strip() if len(parts) > 3 else None
 
     async with get_db_session() as session:
         user = None
@@ -471,7 +485,15 @@ async def admin_update_account_handler(update: Update, context: ContextTypes.DEF
         stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
         fpl = (await session.execute(stmt_f)).scalar_one_or_none()
 
-        full_dec = decrypt_string(payout.encrypted_account_number)
+        try:
+            full_dec = decrypt_string(payout.encrypted_account_number)
+        except Exception:
+            full_dec = acc_num
+
+        fpl_id_str = str(fpl.fpl_id) if fpl else "N/A"
+        mgr_name = fpl.manager_name if fpl else "N/A"
+        team_name = fpl.team_name if fpl else "N/A"
+        admin_user = update.effective_user
 
         msg = (
             "✅ **MEMBER BANK ACCOUNT DETAILS UPDATED SUCCESSFULLY!** 🏦\n\n"
@@ -482,9 +504,9 @@ async def admin_update_account_handler(update: Update, context: ContextTypes.DEF
             f"• **Registration Status:** `{user.registration_status}`\n"
             f"• **Membership Status:** `{user.membership_status}`\n\n"
             "⚽ **FPL DETAILS:**\n"
-            f"• **FPL ID:** `{fpl.fpl_id if fpl else 'N/A'}`\n"
-            f"• **Manager:** {escape_markdown(fpl.manager_name) if fpl else 'N/A'}\n"
-            f"• **Team Name:** {escape_markdown(fpl.team_name) if fpl else 'N/A'}\n\n"
+            f"• **FPL ID:** `{fpl_id_str}`\n"
+            f"• **Manager:** {escape_markdown(mgr_name)}\n"
+            f"• **Team Name:** {escape_markdown(team_name)}\n\n"
             "🏦 **UPDATED PAYOUT BANK DETAILS:**\n"
             f"• **Bank Name:** {escape_markdown(payout.bank_name)}\n"
             f"• **Account Name:** {escape_markdown(payout.account_name)}\n"
@@ -493,6 +515,35 @@ async def admin_update_account_handler(update: Update, context: ContextTypes.DEF
             "💾 *Successfully updated in database and synchronized to persistent JSON backup snapshot.*"
         )
         await safe_reply(update.message, msg)
+
+        # DM alert broadcast to payment admins
+        from services.auth_service import AuthService
+        admin_ids = AuthService.get_payment_admin_ids()
+
+        admin_dm_msg = (
+            "🔔 **ADMIN NOTIFICATION: MEMBER BANK DETAILS UPDATED** 🏦\n\n"
+            "👤 **MEMBER DETAILS:**\n"
+            f"• **Full Name:** {user.full_name}\n"
+            f"• **FEG Member ID:** `{user.feg_member_id}`\n"
+            f"• **Telegram ID:** `{user.telegram_id}` (@{user.telegram_username or 'NoUsername'})\n\n"
+            "🏦 **NEW PAYOUT BANK DETAILS:**\n"
+            f"• **Bank:** {payout.bank_name}\n"
+            f"• **Account Name:** {payout.account_name}\n"
+            f"• **Full Decrypted Account Number:** `{full_dec}`\n"
+            f"• **Masked Account Number:** `{payout.masked_account_number}`\n\n"
+            f"✍️ **Updated By Admin:** @{admin_user.username or 'Admin'} (`{admin_user.id}`)"
+        )
+
+        for admin_id in admin_ids:
+            if admin_id != admin_user.id:
+                try:
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=admin_dm_msg,
+                        parse_mode="Markdown"
+                    )
+                except Exception as ex:
+                    logger.warning(f"Could not send bank update DM alert to admin {admin_id}: {ex}")
 
 
 @admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
