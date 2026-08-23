@@ -12,6 +12,7 @@ from database.repository import (
     add_audit_log
 )
 from services.auth_service import admin_required
+from services.member_service import MemberService
 from services.fpl_service import FPLService
 from services.referral_service import ReferralService
 from services.reward_service import RewardService
