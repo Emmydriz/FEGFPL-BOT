@@ -64,7 +64,10 @@ from bot.handlers.dashboard import (
     verify_membership_callback,
     standings_classic_handler,
     standings_h2h_handler,
-    motw_handler
+    motw_handler,
+    set_name_handler,
+    set_fpl_handler,
+    set_bank_handler
 )
 from bot.handlers.content import (
     captain_picks_handler,
@@ -154,8 +157,10 @@ def build_app():
     # Member Dashboard & Standings Commands
     app.add_handler(CommandHandler("profile", member_profile_dashboard_handler))
     app.add_handler(CommandHandler("dashboard", member_profile_dashboard_handler))
-    app.add_handler(CommandHandler("info", member_profile_dashboard_handler))
     app.add_handler(CommandHandler("referral", member_profile_dashboard_handler))
+    app.add_handler(CommandHandler("setname", set_name_handler))
+    app.add_handler(CommandHandler("setfpl", set_fpl_handler))
+    app.add_handler(CommandHandler("setbank", set_bank_handler))
     app.add_handler(CommandHandler("classic", classic_dashboard_handler))
     app.add_handler(CommandHandler("h2h", h2h_dashboard_handler))
     app.add_handler(CommandHandler("cup", cup_dashboard_handler))

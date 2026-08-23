@@ -284,3 +284,135 @@ async def motw_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🏆 *Official Manager of the Week scoring starts in Gameweek 4! Winner is awarded a ₦1,000 cash prize after every Gameweek.*"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+@approved_member_required()
+async def set_name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args:
+        await update.message.reply_text(
+            "✏️ **UPDATE YOUR FULL NAME**\n\n"
+            "Please provide your updated full name.\n"
+            "Usage: `/setname Firstname Lastname`",
+            parse_mode="Markdown"
+        )
+        return
+
+    new_name = " ".join(args).strip()
+    user_tg = update.effective_user
+
+    async with get_db_session() as session:
+        user = await MemberService.get_user_by_telegram_id(session, user_tg.id)
+        if user:
+            user.full_name = new_name
+            await session.commit()
+            await update.message.reply_text(
+                f"✅ **FULL NAME UPDATED!**\n\nYour profile full name has been updated to: **{escape_markdown(new_name)}**",
+                parse_mode="Markdown"
+            )
+
+
+@approved_member_required()
+async def set_fpl_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args or not args[0].isdigit():
+        await update.message.reply_text(
+            "⚽ **UPDATE YOUR FPL ID**\n\n"
+            "Please provide your numerical FPL ID.\n"
+            "Usage: `/setfpl 123456`",
+            parse_mode="Markdown"
+        )
+        return
+
+    fpl_id = int(args[0])
+    user_tg = update.effective_user
+
+    async with get_db_session() as session:
+        user = await MemberService.get_user_by_telegram_id(session, user_tg.id)
+        if user:
+            manager_name, team_name = await FPLService.get_user_fpl_details(fpl_id)
+            stmt_fpl = select(FPLProfile).where(FPLProfile.user_id == user.id)
+            fpl = (await session.execute(stmt_fpl)).scalar_one_or_none()
+
+            is_classic = await FPLService.check_league_membership(settings.FPL_CLASSIC_LEAGUE_ID, fpl_id, "classic")
+            is_h2h = await FPLService.check_league_membership(settings.FPL_H2H_LEAGUE_ID, fpl_id, "h2h")
+
+            if not fpl:
+                fpl = FPLProfile(
+                    user_id=user.id,
+                    fpl_id=fpl_id,
+                    manager_name=manager_name or "Manager",
+                    team_name=team_name or "Team",
+                    classic_status="VERIFIED" if is_classic else "PENDING",
+                    h2h_status="VERIFIED" if is_h2h else "PENDING"
+                )
+                session.add(fpl)
+            else:
+                fpl.fpl_id = fpl_id
+                if manager_name:
+                    fpl.manager_name = manager_name
+                if team_name:
+                    fpl.team_name = team_name
+                fpl.classic_status = "VERIFIED" if is_classic else "PENDING"
+                fpl.h2h_status = "VERIFIED" if is_h2h else "PENDING"
+
+            await session.commit()
+            msg = (
+                "✅ **FPL PROFILE UPDATED & VERIFIED!**\n\n"
+                f"• **FPL ID:** `{fpl_id}`\n"
+                f"• **Manager:** {escape_markdown(fpl.manager_name)}\n"
+                f"• **Team Name:** {escape_markdown(fpl.team_name)}\n"
+                f"• **Classic Status:** {'✅ VERIFIED IN LEAGUE' if is_classic else '🟡 PENDING'}\n"
+                f"• **H2H Status:** {'✅ VERIFIED IN LEAGUE' if is_h2h else '🟡 PENDING'}"
+            )
+            await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+@approved_member_required()
+async def set_bank_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.replace("/setbank", "").strip()
+    parts = [p.strip() for p in text.split("|") if p.strip()]
+
+    if len(parts) != 3:
+        await update.message.reply_text(
+            "🏦 **UPDATE PAYOUT BANK ACCOUNT**\n\n"
+            "Please provide your Bank Name, Account Name, and Account Number separated by `|`.\n\n"
+            "Usage: `/setbank Palmpay | Odeyemi Omogbolahan | 8066106785`",
+            parse_mode="Markdown"
+        )
+        return
+
+    bank_name, account_name, account_number = parts
+    user_tg = update.effective_user
+
+    async with get_db_session() as session:
+        user = await MemberService.get_user_by_telegram_id(session, user_tg.id)
+        if user:
+            stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == user.id)
+            payout = (await session.execute(stmt_p)).scalar_one_or_none()
+            enc_num = encrypt_string(account_number)
+            masked_num = mask_account_number(account_number)
+
+            if not payout:
+                payout = PayoutAccount(
+                    user_id=user.id,
+                    bank_name=bank_name,
+                    account_name=account_name,
+                    encrypted_account_number=enc_num,
+                    masked_account_number=masked_num
+                )
+                session.add(payout)
+            else:
+                payout.bank_name = bank_name
+                payout.account_name = account_name
+                payout.encrypted_account_number = enc_num
+                payout.masked_account_number = masked_num
+
+            await session.commit()
+            msg = (
+                "✅ **PAYOUT BANK ACCOUNT UPDATED!**\n\n"
+                f"• **Bank:** {escape_markdown(bank_name)}\n"
+                f"• **Account Name:** {escape_markdown(account_name)}\n"
+                f"• **Account Number:** `{masked_num}`"
+            )
+            await update.message.reply_text(msg, parse_mode="Markdown")
