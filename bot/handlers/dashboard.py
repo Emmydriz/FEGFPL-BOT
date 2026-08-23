@@ -413,6 +413,9 @@ async def set_bank_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 payout.masked_account_number = masked_num
 
             await session.commit()
+            from services.backup_service import BackupService
+            await BackupService.backup_all_members_to_json()
+
             msg = (
                 "✅ **PAYOUT BANK ACCOUNT UPDATED!**\n\n"
                 f"• **Bank:** {escape_markdown(bank_name)}\n"

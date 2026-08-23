@@ -19,19 +19,19 @@ class AuthService:
     @classmethod
     def get_admin_role(cls, telegram_id: int) -> Optional[str]:
         # Production Super Admins
-        super_admins = {settings.ADMIN_SUPER_ID, 1703339441, 6948840492, 123456789}
+        super_admins = {settings.ADMIN_SUPER_ID, 1703339441, 123456789}
         if telegram_id in super_admins:
             cls.register_admin(telegram_id)
             return "SUPER_ADMIN"
 
         # Production Finance Admins
-        finance_admins = {settings.ADMIN_FINANCE_ID, 2142855199, 2112337065}
+        finance_admins = {settings.ADMIN_FINANCE_ID, 2142855199}
         if telegram_id in finance_admins:
             cls.register_admin(telegram_id)
             return "FINANCE_ADMIN"
 
         # Production Content Admins
-        content_admins = {settings.ADMIN_CONTENT_ID, 7017254512, 7413474541}
+        content_admins = {settings.ADMIN_CONTENT_ID, 7017254512}
         if telegram_id in content_admins:
             cls.register_admin(telegram_id)
             return "CONTENT_ADMIN"
