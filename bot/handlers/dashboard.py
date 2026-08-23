@@ -70,6 +70,8 @@ async def member_profile_dashboard_handler(update: Update, context: ContextTypes
         safe_team_name = escape_markdown(team_name)
         safe_bank_name = escape_markdown(bank_name)
         safe_account_name = escape_markdown(account_name)
+        classic_badge = "✅ VERIFIED IN LEAGUE" if (fpl and fpl.classic_status == "VERIFIED") else "🟡 PENDING (Click Verify)"
+        h2h_badge = "✅ VERIFIED IN LEAGUE" if (fpl and fpl.h2h_status == "VERIFIED") else "🟡 PENDING (Click Verify)"
 
         msg = (
             "👤 **FEG MEMBER PROFILE & DASHBOARD**\n\n"
@@ -77,10 +79,12 @@ async def member_profile_dashboard_handler(update: Update, context: ContextTypes
             f"• **FEG Member ID:** `{user.feg_member_id}`\n"
             f"• **Registration Status:** `{user.registration_status}`\n"
             f"• **Telegram ID:** `{user.telegram_id}` (@{safe_tg_username})\n\n"
-            "⚽ **FPL PROFILE:**\n"
+            "⚽ **FPL PROFILE & LEAGUE VERIFICATION:**\n"
             f"• **FPL ID:** `{fpl_id}`\n"
             f"• **Manager:** {safe_manager_name}\n"
-            f"• **Team Name:** {safe_team_name}\n\n"
+            f"• **Team Name:** {safe_team_name}\n"
+            f"• **Classic League Status:** {classic_badge}\n"
+            f"• **H2H League Status:** {h2h_badge}\n\n"
             "🏦 **PAYOUT BANK ACCOUNT:**\n"
             f"• **Bank:** {safe_bank_name}\n"
             f"• **Account Name:** {safe_account_name}\n"
