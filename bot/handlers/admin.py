@@ -481,10 +481,177 @@ async def admin_update_account_handler(update: Update, context: ContextTypes.DEF
         )
 
 
-@admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
-async def export_members_admin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    target_msg = update.callback_query.message if update.callback_query else update.message
-    await safe_reply(target_msg, "📊 **GENERATING FULL FEG MEMBER DATABASE EXPORT (CSV)...**")
+@admin_required("SUPER_ADMIN")
+async def admin_start_new_season_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text_input = update.message.text.replace("/start_new_season", "").strip()
+    new_season = text_input if text_input else "2027/2028"
+
+    # Calculate deadline 14 days before FPL GW1 official start date
+    import datetime
+    from services.fpl_service import FPLService
+    gw1_info = await FPLService.get_gameweek_info(1)
+
+    deadline_dt = None
+    if gw1_info and gw1_info.get("deadline_time"):
+        try:
+            dl_str = gw1_info["deadline_time"].replace("Z", "+00:00")
+            gw1_dt = datetime.datetime.fromisoformat(dl_str)
+            deadline_dt = gw1_dt - datetime.timedelta(days=14)
+        except Exception as e:
+            logger.warning(f"Could not parse GW1 deadline: {e}")
+
+    if not deadline_dt:
+        # Default fallback: August 1st of the starting year
+        year = int(new_season.split("/")[0]) if "/" in new_season else 2027
+        deadline_dt = datetime.datetime(year, 8, 1, 23, 59, 59, tzinfo=datetime.timezone.utc)
+
+    async with get_db_session() as session:
+        stmt = select(User).where(User.membership_status == "ACTIVE")
+        users = (await session.execute(stmt)).scalars().all()
+
+        updated_count = 0
+        for u in users:
+            u.membership_status = "PENDING_RENEWAL"
+            u.renewal_payment_status = "NOT_SUBMITTED"
+            u.renewal_deadline = deadline_dt
+            u.current_season = new_season
+            updated_count += 1
+
+        await session.commit()
+
+    from services.backup_service import BackupService
+    await BackupService.backup_all_members_to_json()
+
+    deadline_fmt = deadline_dt.strftime("%Y-%m-%d %H:%M UTC")
+
+    msg = (
+        "🚀 **NEW SEASON INITIALIZED** ⚽\n\n"
+        f"• **New Season:** `{new_season}`\n"
+        f"• **Members Set to PENDING_RENEWAL:** `{updated_count}`\n"
+        f"• **Official Renewal Deadline (14 days before GW1):** `{deadline_fmt}`\n\n"
+        "💡 *Active members are now prompted to use /renew to submit their annual renewal proof.*"
+    )
+    await safe_reply(update.message, msg)
+
+
+@admin_required("SUPER_ADMIN")
+async def admin_purge_unrenewed_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async with get_db_session() as session:
+        stmt = select(User).where(User.membership_status == "PENDING_RENEWAL")
+        pending_users = (await session.execute(stmt)).scalars().all()
+
+    if not pending_users:
+        await safe_reply(update.message, "✅ No members are currently pending renewal for purge.")
+        return
+
+    preview_lines = [f"• `{u.feg_member_id}` - {u.full_name} (@{u.telegram_username or 'NoUsername'})" for u in pending_users[:15]]
+    more_count = len(pending_users) - 15 if len(pending_users) > 15 else 0
+
+    msg = (
+        "⚠️ **CONFIRM PURGE UNRENEWED MEMBERS** 🚨\n\n"
+        f"Found **{len(pending_users)}** member(s) with `PENDING_RENEWAL` status.\n\n"
+        "**Unrenewed Members Preview:**\n" + "\n".join(preview_lines) +
+        (f"\n*...and {more_count} more members*" if more_count > 0 else "") +
+        "\n\nPurging will soft-delete these members to `EXPIRED` status. Their historical points and Hall of Fame records will be preserved permanently."
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("⚠️ CONFIRM PURGE UNRENEWED MEMBERS", callback_data="confirm_purge_unrenewed")],
+        [InlineKeyboardButton("❌ CANCEL PURGE", callback_data="cancel_purge_unrenewed")]
+    ])
+    await safe_reply(update.message, msg, reply_markup=keyboard)
+
+
+@admin_required("SUPER_ADMIN")
+async def admin_confirm_purge_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "cancel_purge_unrenewed":
+        await query.message.edit_text("❌ Purge unrenewed members cancelled.")
+        return
+
+    async with get_db_session() as session:
+        stmt = select(User).where(User.membership_status == "PENDING_RENEWAL")
+        pending_users = (await session.execute(stmt)).scalars().all()
+
+        purged_count = 0
+        for u in pending_users:
+            u.membership_status = "EXPIRED"
+            purged_count += 1
+
+        await session.commit()
+
+    from services.backup_service import BackupService
+    await BackupService.backup_all_members_to_json()
+
+    await query.message.edit_text(
+        f"⚠️ **PURGE UNRENEWED MEMBERS COMPLETE**\n\n"
+        f"• **Total Members Soft-Deleted to EXPIRED:** `{purged_count}`\n"
+        f"• **Historical Records & Hall of Fame Data:** Preserved\n"
+        "• **JSON Backup Snapshot:** Updated"
+    )
+
+
+@admin_required("SUPER_ADMIN", "CONTENT_ADMIN")
+async def admin_record_hall_of_fame_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text_input = update.message.text.replace("/record_hall_of_fame", "").replace("/add_hof", "").strip()
+    parts = [p.strip() for p in text_input.split("|")]
+
+    if len(parts) < 5:
+        await safe_reply(
+            update.message,
+            "⚠️ **USAGE:**\n`/record_hall_of_fame Season | Category | FEG_Member_ID | Rank | Title | [Details]`\n\n"
+            "**Example:**\n"
+            "`/record_hall_of_fame 2026/2027 | CLASSIC | FEG-2026-000001 | 1 | Classic Champion`"
+        )
+        return
+
+    season_str, category_str, target_id, rank_str, title_str = parts[:5]
+    details_str = parts[5] if len(parts) > 5 else None
+    rank_int = int(rank_str) if rank_str.isdigit() else 1
+
+    async with get_db_session() as session:
+        stmt_u = select(User).where(User.feg_member_id == target_id.upper())
+        user = (await session.execute(stmt_u)).scalar_one_or_none()
+
+        if not user:
+            stmt_t = select(User).where(User.telegram_id == (int(target_id) if target_id.isdigit() else 0))
+            user = (await session.execute(stmt_t)).scalar_one_or_none()
+
+        mgr_name = user.full_name if user else f"Manager {target_id}"
+        team_name = "FEG FC"
+
+        if user:
+            stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
+            fpl = (await session.execute(stmt_f)).scalar_one_or_none()
+            if fpl:
+                mgr_name = fpl.manager_name or mgr_name
+                team_name = fpl.team_name or team_name
+
+        from database.models import HallOfFameRecord
+        record = HallOfFameRecord(
+            feg_member_id=user.feg_member_id if user else target_id,
+            season=season_str,
+            category=category_str.upper(),
+            rank=rank_int,
+            manager_name=mgr_name,
+            team_name=team_name,
+            title=title_str,
+            details=details_str
+        )
+        session.add(record)
+        await session.commit()
+
+    msg = (
+        "🏆 **PERMANENT HALL OF FAME RECORD ADDED!** 👑\n\n"
+        f"• **Season:** `{season_str}`\n"
+        f"• **Category:** `{category_str.upper()}` (Rank #{rank_int})\n"
+        f"• **Member:** {mgr_name} (`{target_id}`)\n"
+        f"• **Title:** {title_str}\n\n"
+        "💡 *This record is permanent and will never be altered, even if members expire or leave.*"
+    )
+    await safe_reply(update.message, msg)
 
     async with get_db_session() as session:
         stmt = select(User).order_by(User.id.asc())

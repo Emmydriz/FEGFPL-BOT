@@ -10,45 +10,30 @@ from config.logging_config import logger
 async def _render_hall_of_fame_category(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
     category_upper = category.upper()
     async with get_db_session() as session:
-        entries = await HallOfFameService.get_hall_of_fame_entries(session, category_upper)
+        from database.models import HallOfFameRecord
+        from sqlalchemy import select
+        stmt = select(HallOfFameRecord).where(HallOfFameRecord.category == category_upper).order_by(HallOfFameRecord.season.desc(), HallOfFameRecord.rank.asc())
+        entries = (await session.execute(stmt)).scalars().all()
 
         if not entries:
-            if category_upper == "CLASSIC":
-                msg = (
-                    "🏆 **FEG CLASSIC LEAGUE HALL OF FAME (2026/27 SEASON)**\n\n"
-                    "No Hall of Fame entries recorded yet for the Classic League.\n"
-                    "The inaugural **2026/27 Season Hall of Fame Champion** will be automatically crowned "
-                    "and recorded upon season conclusion at Gameweek 38!"
-                )
-            elif category_upper == "H2H":
-                msg = (
-                    "⚔️ **FEG HEAD-TO-HEAD HALL OF FAME (2026/27 SEASON)**\n\n"
-                    "No Hall of Fame entries recorded yet for the H2H League.\n"
-                    "The H2H Season Winner will be automatically inducted into the Hall of Fame upon season completion!"
-                )
-            else:
-                msg = (
-                    "🥊 **FEG KNOCKOUT CUP HALL OF FAME (2026/27 SEASON)**\n\n"
-                    "No Cup Hall of Fame entries recorded yet!\n"
-                    "The FEG Knockout Cup has not started. FPL automatically opens the official Cup once our Classic League "
-                    "reaches FPL's required member count threshold.\n\n"
-                    "💡 Use `/cupstatus` to check live Cup qualification & tournament status!"
-                )
+            msg = (
+                f"🏆 **FEG {category_upper} LEAGUE HALL OF FAME**\n\n"
+                "No official Hall of Fame records logged yet.\n"
+                "This is the inaugural season being tracked! Official winners for Classic, H2H, and Cup "
+                "will be manually confirmed and permanently recorded by administrators at the end of the season."
+            )
             await update.message.reply_text(msg, parse_mode="Markdown")
             return
 
         lines = [f"🏛️ **FEG {category_upper} LEAGUE HALL OF FAME** 👑\n"]
         for entry in entries:
-            title_tag = f"👑 **{entry.title}**" if entry.category == "CUP" else f"🏆 **{entry.title}**"
+            rank_medal = "🥇" if entry.rank == 1 else ("🥈" if entry.rank == 2 else "🥉")
             lines.append(
-                f"**Season {entry.season}:** {title_tag}\n"
-                f"• **Champion:** {entry.manager_name} ({entry.team_name})\n"
-                f"• **Total Points:** `{entry.total_points} PTS`\n"
-                f"• **Runner-Up:** {entry.runner_up_name or 'N/A'} ({entry.runner_up_team or 'N/A'})\n\n"
-                "📊 **PHASE-BY-PHASE STATS BREAKDOWN:**\n"
-                f"  - **Early Phase (GW1–12):** `{entry.early_phase_pts} PTS` | Standout: `{entry.early_standout_gw or 'N/A'}`\n"
-                f"  - **Mid Phase (GW13–26):** `{entry.mid_phase_pts} PTS` | Standout: `{entry.mid_standout_gw or 'N/A'}`\n"
-                f"  - **Late Phase (GW27–38):** `{entry.late_phase_pts} PTS` | Standout: `{entry.late_standout_gw or 'N/A'}`\n"
+                f"**Season {entry.season}:** {rank_medal} **{entry.title}**\n"
+                f"• **Manager:** {entry.manager_name} ({entry.team_name})\n"
+                f"• **FEG Member ID:** `{entry.feg_member_id}`\n"
+                f"• **Rank:** #{entry.rank}\n"
+                f"• **Details:** {entry.details or 'Official Winner'}\n"
                 "───────────────────────────"
             )
 

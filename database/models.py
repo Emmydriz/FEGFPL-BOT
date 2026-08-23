@@ -23,6 +23,12 @@ class User(Base):
     referral_code = Column(String(50), unique=True, index=True, nullable=False)
     referred_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
+    # Season & Renewal Management
+    current_season = Column(String(50), default="2026/2027")
+    membership_status = Column(String(50), default="ACTIVE", index=True)  # ACTIVE, PENDING_RENEWAL, EXPIRED
+    renewal_deadline = Column(DateTime, nullable=True)
+    renewal_payment_status = Column(String(50), default="NOT_SUBMITTED", index=True)  # NOT_SUBMITTED, PENDING_APPROVAL, APPROVED
+
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
@@ -207,3 +213,19 @@ class HallOfFame(Base):
 
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class HallOfFameRecord(Base):
+    __tablename__ = "hall_of_fame_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    feg_member_id = Column(String(50), nullable=False, index=True)
+    season = Column(String(20), nullable=False, index=True)  # e.g., "2026/2027"
+    category = Column(String(20), nullable=False, index=True)  # CLASSIC, H2H, CUP
+    rank = Column(Integer, default=1)  # 1 = Champion, 2 = Runner Up, 3 = Third Place
+    manager_name = Column(String(200), nullable=False)
+    team_name = Column(String(200), nullable=False)
+    title = Column(String(100), nullable=False)
+    details = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=utcnow)

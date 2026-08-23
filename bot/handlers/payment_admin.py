@@ -132,3 +132,102 @@ async def admin_reject_payment_callback(update: Update, context: ContextTypes.DE
         )
     except Exception as e:
         logger.error(f"Could not send rejection DM to member {member_telegram_id}: {e}")
+
+
+@admin_required()
+async def admin_approve_renewal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = int(query.data.replace("approve_ren_", ""))
+    admin_user = update.effective_user
+
+    async with get_db_session() as session:
+        from database.models import User
+        from sqlalchemy import select
+        stmt = select(User).where(User.id == user_id)
+        user = (await session.execute(stmt)).scalar_one_or_none()
+
+        if not user:
+            await query.message.reply_text("⚠️ Member record not found.")
+            return
+
+        user.membership_status = "ACTIVE"
+        user.renewal_payment_status = "APPROVED"
+        user.registration_status = "COMMUNITY_ACCESS_GRANTED"
+
+        # Generate community invite link
+        invite = await CommunityService.create_one_time_invite(
+            session=session,
+            user=user,
+            bot=context.bot
+        )
+        community_link = invite.invite_link
+        member_telegram_id = user.telegram_id
+        member_feg_id = user.feg_member_id
+
+    # Backup members to JSON snapshot file
+    from services.backup_service import BackupService
+    await BackupService.backup_all_members_to_json()
+
+    await query.message.edit_caption(
+        caption=f"{query.message.caption}\n\n✅ **RENEWAL APPROVED** by Admin `{admin_user.id}` (@{admin_user.username or 'Admin'})",
+        parse_mode="Markdown"
+    )
+
+    member_msg = (
+        "🎉 **MEMBERSHIP RENEWAL APPROVED!** 🎉\n\n"
+        "Your FEG FPL membership renewal payment has been verified and approved!\n"
+        f"👤 **FEG Member ID:** `{member_feg_id}`\n"
+        "• **Membership Status:** ACTIVE\n\n"
+        "Click the button below to access the private FEG Telegram Community:"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚀 ENTER FEG COMMUNITY", url=community_link)]
+    ])
+
+    try:
+        await context.bot.send_message(
+            chat_id=member_telegram_id,
+            text=member_msg,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Could not send renewal approval DM to member {member_telegram_id}: {e}")
+
+
+@admin_required()
+async def admin_reject_renewal_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = int(query.data.replace("reject_ren_", ""))
+    admin_user = update.effective_user
+
+    async with get_db_session() as session:
+        from database.models import User
+        from sqlalchemy import select
+        stmt = select(User).where(User.id == user_id)
+        user = (await session.execute(stmt)).scalar_one_or_none()
+
+        if not user:
+            await query.message.reply_text("⚠️ Member record not found.")
+            return
+
+        user.renewal_payment_status = "REJECTED"
+        member_telegram_id = user.telegram_id
+
+    await query.message.edit_caption(
+        caption=f"{query.message.caption}\n\n❌ **RENEWAL REJECTED** by Admin `{admin_user.id}` (@{admin_user.username or 'Admin'})",
+        parse_mode="Markdown"
+    )
+
+    try:
+        await context.bot.send_message(
+            chat_id=member_telegram_id,
+            text="⚠️ **MEMBERSHIP RENEWAL REJECTED**\n\nYour renewal payment submission could not be verified by FEG Finance Admin.\nPlease re-check your transfer receipt and try submitting again using /renew.",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        logger.error(f"Could not send renewal rejection DM to member {member_telegram_id}: {e}")

@@ -24,6 +24,18 @@ Base = declarative_base()
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migrate SQLite table columns if missing
+        from sqlalchemy import text
+        for col_def in [
+            "ALTER TABLE users ADD COLUMN current_season VARCHAR(50) DEFAULT '2026/2027'",
+            "ALTER TABLE users ADD COLUMN membership_status VARCHAR(50) DEFAULT 'ACTIVE'",
+            "ALTER TABLE users ADD COLUMN renewal_deadline DATETIME",
+            "ALTER TABLE users ADD COLUMN renewal_payment_status VARCHAR(50) DEFAULT 'NOT_SUBMITTED'"
+        ]:
+            try:
+                await conn.execute(text(col_def))
+            except Exception:
+                pass
 
     # Sync active receiving payment account config from .env settings
     from database.repository import sync_payment_account_from_settings

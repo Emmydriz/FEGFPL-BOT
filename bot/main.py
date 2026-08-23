@@ -38,6 +38,10 @@ from bot.handlers.admin import (
     view_member_detail_callback,
     admin_update_member_handler,
     admin_update_account_handler,
+    admin_start_new_season_handler,
+    admin_purge_unrenewed_handler,
+    admin_confirm_purge_callback,
+    admin_record_hall_of_fame_handler,
     export_members_admin_handler,
     admin_import_forwarded_message_handler,
     restore_member_command_handler
@@ -61,7 +65,9 @@ from bot.handlers.register import (
 )
 from bot.handlers.payment_admin import (
     admin_approve_payment_callback,
-    admin_reject_payment_callback
+    admin_reject_payment_callback,
+    admin_approve_renewal_callback,
+    admin_reject_renewal_callback
 )
 from bot.handlers.dashboard import (
     member_profile_dashboard_handler,
@@ -225,6 +231,11 @@ def build_app():
     app.add_handler(CommandHandler("update_member", admin_update_member_handler))
     app.add_handler(CommandHandler("update_account", admin_update_account_handler))
     app.add_handler(CommandHandler("update_bank", admin_update_account_handler))
+    app.add_handler(CommandHandler("update_bank_details", admin_update_account_handler))
+    app.add_handler(CommandHandler("start_new_season", admin_start_new_season_handler))
+    app.add_handler(CommandHandler("purge_unrenewed", admin_purge_unrenewed_handler))
+    app.add_handler(CommandHandler("record_hall_of_fame", admin_record_hall_of_fame_handler))
+    app.add_handler(CommandHandler("add_hof", admin_record_hall_of_fame_handler))
     app.add_handler(CommandHandler("restore_member", restore_member_command_handler))
     app.add_handler(CommandHandler("restore_profile", restore_member_command_handler))
     app.add_handler(CommandHandler("export_members", export_members_admin_handler))
@@ -242,6 +253,9 @@ def build_app():
     # Payment Approval & Rejection Callbacks
     app.add_handler(CallbackQueryHandler(admin_approve_payment_callback, pattern="^approve_pay_"))
     app.add_handler(CallbackQueryHandler(admin_reject_payment_callback, pattern="^reject_pay_"))
+    app.add_handler(CallbackQueryHandler(admin_approve_renewal_callback, pattern="^approve_ren_"))
+    app.add_handler(CallbackQueryHandler(admin_reject_renewal_callback, pattern="^reject_ren_"))
+    app.add_handler(CallbackQueryHandler(admin_confirm_purge_callback, pattern="^(confirm_purge_unrenewed|cancel_purge_unrenewed)$"))
 
     # Admin Dashboard Callbacks
     app.add_handler(CallbackQueryHandler(admin_payment_account_handler, pattern="^admin_pay_account$"))

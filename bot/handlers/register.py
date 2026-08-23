@@ -372,6 +372,8 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     telegram_id = update.effective_user.id
 
+    is_renewal = context.user_data.get("is_renewal", False)
+
     async with get_db_session() as session:
         user = await MemberService.get_user_by_telegram_id(session, telegram_id)
         if not user:
@@ -381,6 +383,9 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
                 full_name=context.user_data.get("full_name", update.effective_user.full_name),
                 telegram_username=update.effective_user.username
             )
+
+        if is_renewal:
+            user.renewal_payment_status = "PENDING_APPROVAL"
 
         stmt_fpl = select(FPLProfile).where(FPLProfile.user_id == user.id)
         fpl = (await session.execute(stmt_fpl)).scalar_one_or_none()
@@ -424,12 +429,17 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
     if not admin_ids:
         admin_ids = [update.effective_user.id]
 
+    header_title = "🔄 **NEW MEMBERSHIP RENEWAL SUBMISSION** 🚨" if is_renewal else "💳 **NEW PAYMENT SUBMISSION FOR REVIEW** 🚨"
+    approve_cb = f"approve_ren_{user.id}" if is_renewal else f"approve_pay_{payment_id}"
+    reject_cb = f"reject_ren_{user.id}" if is_renewal else f"reject_pay_{payment_id}"
+
     admin_alert = (
-        "💳 **NEW PAYMENT SUBMISSION FOR REVIEW** 🚨\n\n"
+        f"{header_title}\n\n"
         "👤 **MEMBER DETAILS:**\n"
         f"• **Full Name:** {user.full_name}\n"
         f"• **FEG Member ID:** `{member_feg_id}`\n"
-        f"• **Telegram:** @{update.effective_user.username or 'NoUsername'} (`{telegram_id}`)\n\n"
+        f"• **Telegram:** @{update.effective_user.username or 'NoUsername'} (`{telegram_id}`)\n"
+        f"• **Membership Status:** `{user.membership_status}`\n\n"
         "⚽ **FPL DETAILS:**\n"
         f"• **FPL ID:** `{fpl_id_str}`\n"
         f"• **Manager:** {manager_name}\n"
@@ -440,14 +450,14 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
         f"• **Account Number:** `{payout_acc_num}`\n\n"
         "💰 **PAYMENT DETAILS:**\n"
         f"• **Amount:** ₦{settings.FEG_REGISTRATION_FEE:,}\n"
-        "• **Status:** 🟡 PENDING ADMIN REVIEW\n\n"
-        "Click **APPROVE PAYMENT** to activate member & generate single-use Telegram community link, or **REJECT PAYMENT**."
+        "• **Status:** 🟡 PENDING ADMIN RENEWAL REVIEW\n\n"
+        "Click **APPROVE RENEWAL** to activate member for the new season, or **REJECT RENEWAL**."
     )
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ APPROVE PAYMENT", callback_data=f"approve_pay_{payment_id}"),
-            InlineKeyboardButton("❌ REJECT PAYMENT", callback_data=f"reject_pay_{payment_id}")
+            InlineKeyboardButton("✅ APPROVE RENEWAL" if is_renewal else "✅ APPROVE PAYMENT", callback_data=approve_cb),
+            InlineKeyboardButton("❌ REJECT RENEWAL" if is_renewal else "❌ REJECT PAYMENT", callback_data=reject_cb)
         ]
     ])
 
@@ -526,11 +536,36 @@ async def cancel_registration_handler(update: Update, context: ContextTypes.DEFA
     return ConversationHandler.END
 
 
+async def renew_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    async with get_db_session() as session:
+        db_user = await MemberService.get_user_by_telegram_id(session, user.id)
+        pay_cfg = await get_latest_active_payment_account(session)
+        bank_name = pay_cfg.bank_name if pay_cfg else settings.FEG_PAYMENT_BANK
+        account_name = pay_cfg.account_name if pay_cfg else settings.FEG_PAYMENT_ACCOUNT_NAME
+        account_number = pay_cfg.account_number if pay_cfg else settings.FEG_PAYMENT_ACCOUNT_NUMBER
+
+    context.user_data["is_renewal"] = True
+
+    msg = (
+        "🔄 **FEG SEASON MEMBERSHIP RENEWAL**\n\n"
+        f"To renew your FEG FPL membership for the **{db_user.current_season if db_user else 'upcoming'}** season, "
+        f"please transfer the annual fee of **₦{settings.FEG_REGISTRATION_FEE:,}** to:\n\n"
+        f"🏦 **Bank:** {bank_name}\n"
+        f"👤 **Account Name:** {account_name}\n"
+        f"🔢 **Account Number:** `{account_number}`\n\n"
+        "📸 Please upload a screenshot or document receipt of your payment transfer below:"
+    )
+    await safe_send_markdown(update.message, msg)
+    return PAYMENT_PROOF
+
+
 def get_registration_conversation_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CallbackQueryHandler(start_registration_callback, pattern="^start_registration$"),
             CommandHandler("register", start_registration_callback),
+            CommandHandler("renew", renew_command_handler),
             CommandHandler("pay", show_payment_details_handler),
             CommandHandler("payment", show_payment_details_handler)
         ],
