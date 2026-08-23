@@ -234,7 +234,7 @@ def build_app():
     app.add_handler(CommandHandler("addwinner", add_winner_fallback_handler))
     app.add_handler(CommandHandler("add_winner", add_winner_fallback_handler))
     app.add_handler(CommandHandler("announce_gw_winner", announce_gw_winner_handler))
-    app.add_handler(MessageHandler(filters.FORWARDED, admin_import_forwarded_message_handler))
+    app.add_handler(MessageHandler((filters.FORWARDED | filters.TEXT | filters.CAPTION) & ~filters.COMMAND, admin_import_forwarded_message_handler))
 
     # Payment Approval & Rejection Callbacks
     app.add_handler(CallbackQueryHandler(admin_approve_payment_callback, pattern="^approve_pay_"))

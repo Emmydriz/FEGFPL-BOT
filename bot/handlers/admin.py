@@ -513,23 +513,25 @@ async def restore_member_command_handler(update: Update, context: ContextTypes.D
 
 async def process_and_restore_member_from_text(msg, target_msg, text: str):
     tg_id_match = (
+        re.search(r"Telegram:\s*@?[a-zA-Z0-9_]*\s*\(?`?(\d{6,11})`?\)?", text, re.IGNORECASE) or
         re.search(r"Telegram ID:\s*`?(\d{6,11})`?", text, re.IGNORECASE) or
         re.search(r"User ID:\s*`?(\d{6,11})`?", text, re.IGNORECASE) or
         re.search(r"ID:\s*`?(\d{6,11})`?", text, re.IGNORECASE) or
+        re.search(r"\(`?(\d{6,11})`?\)", text) or
         re.search(r"(\d{9,11})", text)
     )
     name_match = (
-        re.search(r"Full Name:\s*([^\n\•]+)", text, re.IGNORECASE) or
-        re.search(r"Member Name:\s*([^\n\•]+)", text, re.IGNORECASE) or
-        re.search(r"Member:\s*([^\n\•]+)", text, re.IGNORECASE) or
-        re.search(r"Manager:\s*([^\n\•]+)", text, re.IGNORECASE)
+        re.search(r"Full Name:\s*([^\n\•\*\`]+)", text, re.IGNORECASE) or
+        re.search(r"Member Name:\s*([^\n\•\*\`]+)", text, re.IGNORECASE) or
+        re.search(r"Member:\s*([^\n\•\*\`]+)", text, re.IGNORECASE) or
+        re.search(r"Manager:\s*([^\n\•\*\`]+)", text, re.IGNORECASE)
     )
     fpl_id_match = (
         re.search(r"FPL ID:\s*`?(\d{4,9})`?", text, re.IGNORECASE) or
         re.search(r"FPL:\s*`?(\d{4,9})`?", text, re.IGNORECASE)
     )
-    bank_match = re.search(r"Bank:\s*([^\n\•]+)", text, re.IGNORECASE)
-    acc_name_match = re.search(r"Account Name:\s*([^\n\•]+)", text, re.IGNORECASE)
+    bank_match = re.search(r"Bank:\s*([^\n\•\*\`]+)", text, re.IGNORECASE)
+    acc_name_match = re.search(r"Account Name:\s*([^\n\•\*\`]+)", text, re.IGNORECASE)
     acc_num_match = re.search(r"Account Number:\s*`?(\d{8,11})`?", text, re.IGNORECASE)
 
     tid = None
