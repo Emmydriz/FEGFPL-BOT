@@ -473,7 +473,7 @@ async def export_members_admin_handler(update: Update, context: ContextTypes.DEF
 
 @admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
 async def admin_import_forwarded_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
+    msg = update.effective_message
     if not msg:
         return
 
@@ -491,7 +491,7 @@ async def admin_import_forwarded_message_handler(update: Update, context: Contex
 
 @admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
 async def restore_member_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
+    msg = update.effective_message
     if not msg:
         return
 
@@ -512,6 +512,8 @@ async def restore_member_command_handler(update: Update, context: ContextTypes.D
 
 
 async def process_and_restore_member_from_text(msg, target_msg, text: str):
+    logger.info(f"Admin parsing member text (len={len(text)})...")
+
     tg_id_match = (
         re.search(r"Telegram:\s*@?[a-zA-Z0-9_]*\s*\(?`?(\d{6,11})`?\)?", text, re.IGNORECASE) or
         re.search(r"Telegram ID:\s*`?(\d{6,11})`?", text, re.IGNORECASE) or
@@ -520,6 +522,8 @@ async def process_and_restore_member_from_text(msg, target_msg, text: str):
         re.search(r"\(`?(\d{6,11})`?\)", text) or
         re.search(r"(\d{9,11})", text)
     )
+    feg_id_match = re.search(r"FEG-202\d-\d{6}", text, re.IGNORECASE)
+    username_match = re.search(r"@([a-zA-Z0-9_]{4,32})", text)
     name_match = (
         re.search(r"Full Name:\s*([^\n\•\*\`]+)", text, re.IGNORECASE) or
         re.search(r"Member Name:\s*([^\n\•\*\`]+)", text, re.IGNORECASE) or
@@ -537,38 +541,52 @@ async def process_and_restore_member_from_text(msg, target_msg, text: str):
     tid = None
     if tg_id_match:
         tid = int(tg_id_match.group(1))
-    elif target_msg.forward_from:
+    elif target_msg and target_msg.forward_from:
         tid = target_msg.forward_from.id
 
-    if not tid:
-        if msg.text and msg.text.startswith("/"):
-            await safe_reply(msg, "⚠️ Could not extract Telegram User ID from message. Ensure the message contains `Telegram ID: 123456789` or forward directly.")
-        return
-
-    raw_name = name_match.group(1).strip() if name_match else (target_msg.forward_from.full_name if target_msg.forward_from else f"FEG Member {tid}")
-
-    username = target_msg.forward_from.username if target_msg.forward_from else None
-    user_match = re.search(r"\(@([a-zA-Z0-9_]+)\)", text)
-    if user_match and not username:
-        username = user_match.group(1)
+    feg_id_str = feg_id_match.group(0).upper() if feg_id_match else None
+    uname_str = username_match.group(1) if username_match else (target_msg.forward_from.username if target_msg and target_msg.forward_from else None)
+    raw_name = name_match.group(1).strip() if name_match else (target_msg.forward_from.full_name if target_msg and target_msg.forward_from else None)
 
     async with get_db_session() as session:
-        user = await MemberService.get_user_by_telegram_id(session, tid)
+        user = None
+        if tid:
+            user = await MemberService.get_user_by_telegram_id(session, tid)
+        if not user and feg_id_str:
+            stmt = select(User).where(User.feg_member_id == feg_id_str)
+            user = (await session.execute(stmt)).scalar_one_or_none()
+        if not user and uname_str:
+            stmt = select(User).where(User.telegram_username == uname_str)
+            user = (await session.execute(stmt)).scalar_one_or_none()
+
+        if not user and not tid:
+            if target_msg and target_msg.from_user and target_msg.from_user.id != msg.from_user.id:
+                tid = target_msg.from_user.id
+
+        if not tid and not user:
+            await safe_reply(
+                msg,
+                "⚠️ **COULD NOT EXTRACT MEMBER TELEGRAM ID**\n\n"
+                "Please ensure the message contains `Telegram ID: 123456789`, `FEG-2026-XXXXXX`, or `@username`."
+            )
+            return
+
         if not user:
             user = await MemberService.get_or_start_registration(
                 session=session,
                 telegram_id=tid,
-                full_name=raw_name,
-                telegram_username=username
+                full_name=raw_name or f"FEG Member {tid}",
+                telegram_username=uname_str
             )
         else:
-            if raw_name:
+            if raw_name and raw_name not in ["Not set"]:
                 user.full_name = raw_name
-            if username:
-                user.telegram_username = username
+            if uname_str:
+                user.telegram_username = uname_str
 
         user.registration_status = "COMMUNITY_ACCESS_GRANTED"
 
+        # FPL Profile
         fpl_id = int(fpl_id_match.group(1)) if fpl_id_match else None
         if fpl_id:
             mgr, team = await FPLService.get_user_fpl_details(fpl_id)
@@ -582,7 +600,7 @@ async def process_and_restore_member_from_text(msg, target_msg, text: str):
                 fpl_p = FPLProfile(
                     user_id=user.id,
                     fpl_id=fpl_id,
-                    manager_name=mgr or raw_name,
+                    manager_name=mgr or user.full_name,
                     team_name=team or "FEG FC",
                     classic_status="VERIFIED" if is_classic else "VERIFIED",
                     h2h_status="VERIFIED" if is_h2h else "VERIFIED"
@@ -590,11 +608,15 @@ async def process_and_restore_member_from_text(msg, target_msg, text: str):
                 session.add(fpl_p)
             else:
                 fpl_p.fpl_id = fpl_id
-                fpl_p.manager_name = mgr or raw_name
+                fpl_p.manager_name = mgr or user.full_name
                 fpl_p.team_name = team or "FEG FC"
                 fpl_p.classic_status = "VERIFIED"
                 fpl_p.h2h_status = "VERIFIED"
+        else:
+            stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
+            fpl_p = (await session.execute(stmt_f)).scalar_one_or_none()
 
+        # Bank Account
         bname = bank_match.group(1).strip() if bank_match else "Palmpay"
         aname = acc_name_match.group(1).strip() if acc_name_match else user.full_name
         anum = acc_num_match.group(1).strip() if acc_num_match else "8066106785"
@@ -624,8 +646,8 @@ async def process_and_restore_member_from_text(msg, target_msg, text: str):
             msg,
             f"✅ **MEMBER RECORD PARSED & RESTORED!**\n\n"
             f"• **Member:** {escape_markdown(user.full_name)} (`{user.feg_member_id}`)\n"
-            f"• **Telegram ID:** `{tid}`\n"
-            f"• **FPL ID:** `{fpl_id or 'Not set'}`\n"
+            f"• **Telegram ID:** `{user.telegram_id}` (@{user.telegram_username or 'NoUsername'})\n"
+            f"• **FPL ID:** `{fpl_id or (fpl_p.fpl_id if fpl_p else 'Not set')}`\n"
             f"• **Bank Account:** {escape_markdown(bname)} / {escape_markdown(aname)} / `{masked_num}`"
         )
 
