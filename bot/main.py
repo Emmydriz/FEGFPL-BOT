@@ -84,6 +84,12 @@ async def post_init(application):
     await init_db()
     logger.info("Database initialized successfully.")
 
+    try:
+        from scratch.seed_missing_user_details import auto_seed_production_users
+        await auto_seed_production_users()
+    except Exception as e:
+        logger.warning(f"Production auto-seed warning: {e}")
+
     # Register Bot Commands for Telegram UI Menu
     commands = [
         BotCommand("start", "Welcome screen & start registration"),
