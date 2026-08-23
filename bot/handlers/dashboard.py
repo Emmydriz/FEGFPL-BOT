@@ -77,6 +77,8 @@ async def member_profile_dashboard_handler(update: Update, context: ContextTypes
             "👤 **FEG MEMBER PROFILE & DASHBOARD**\n\n"
             f"• **Full Name:** {safe_full_name}\n"
             f"• **FEG Member ID:** `{user.feg_member_id}`\n"
+            f"• **Current Season:** `{user.current_season or '2026/2027'}`\n"
+            f"• **Membership Status:** `{user.membership_status or 'ACTIVE'}`\n"
             f"• **Registration Status:** `{user.registration_status}`\n"
             f"• **Telegram ID:** `{user.telegram_id}` (@{safe_tg_username})\n\n"
             "⚽ **FPL PROFILE & LEAGUE VERIFICATION:**\n"
@@ -93,7 +95,9 @@ async def member_profile_dashboard_handler(update: Update, context: ContextTypes
             f"• **Referral Code:** `{user.referral_code}`\n"
             f"• **Total Invites:** `{ref_count}` members\n"
             f"• **Rewards Earned:** ₦{total_rewards:,.0f}\n"
-            f"• **Your Personal Referral Link:**\n`{ref_link}`"
+            f"• **Your Personal Referral Link:**\n`{ref_link}`\n\n"
+            "⚠️ **IMPORTANT MEMBERSHIP RENEWAL NOTICE:**\n"
+            "**All members are required to renew their annual FEG FPL membership status using `/renew` before the official season purge deadline. The purge takes place exactly 2 weeks (14 days) prior to the start of each new Premier League season (pulled live from the official FPL API). Unrenewed accounts will be set to EXPIRED status.**"
         )
 
         keyboard = InlineKeyboardMarkup([

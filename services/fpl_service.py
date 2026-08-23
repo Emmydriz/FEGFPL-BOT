@@ -97,6 +97,17 @@ class FPLService:
         return events[0] if events else {"id": 4, "name": "Gameweek 4", "deadline_time": "TBD"}
 
     @classmethod
+    async def get_gameweek_info(cls, event_id: int = 1) -> Optional[Dict[str, Any]]:
+        data = await cls.get_bootstrap_data()
+        if not data:
+            return None
+        events = data.get("events", [])
+        for ev in events:
+            if ev.get("id") == event_id:
+                return ev
+        return None
+
+    @classmethod
     async def get_official_team_of_gw(cls, gameweek: Optional[int] = None) -> Tuple[int, str, List[Dict[str, Any]], int]:
         bootstrap = await cls.get_bootstrap_data()
         if not bootstrap:

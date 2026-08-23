@@ -42,6 +42,7 @@ from bot.handlers.admin import (
     admin_purge_unrenewed_handler,
     admin_confirm_purge_callback,
     admin_record_hall_of_fame_handler,
+    admin_trigger_renewal_reminders_handler,
     export_members_admin_handler,
     admin_import_forwarded_message_handler,
     restore_member_command_handler
@@ -102,6 +103,13 @@ async def post_init(application):
         await auto_seed_production_users()
     except Exception as e:
         logger.warning(f"Production auto-seed warning: {e}")
+
+    try:
+        import asyncio
+        from services.season_reminder_service import SeasonReminderService
+        asyncio.create_task(SeasonReminderService.run_renewal_reminder_check(bot=application.bot))
+    except Exception as e:
+        logger.warning(f"Season renewal reminder check warning: {e}")
 
     # Register Bot Commands for Telegram UI Menu
     commands = [
@@ -241,6 +249,8 @@ def build_app():
     app.add_handler(CommandHandler("purge_unrenewed", admin_purge_unrenewed_handler))
     app.add_handler(CommandHandler("record_hall_of_fame", admin_record_hall_of_fame_handler))
     app.add_handler(CommandHandler("add_hof", admin_record_hall_of_fame_handler))
+    app.add_handler(CommandHandler("trigger_renewal_reminders", admin_trigger_renewal_reminders_handler))
+    app.add_handler(CommandHandler("send_reminders", admin_trigger_renewal_reminders_handler))
     app.add_handler(CommandHandler("restore_member", restore_member_command_handler))
     app.add_handler(CommandHandler("restore_profile", restore_member_command_handler))
     app.add_handler(CommandHandler("export_members", export_members_admin_handler))

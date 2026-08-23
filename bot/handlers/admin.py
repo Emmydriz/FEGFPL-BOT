@@ -723,6 +723,21 @@ async def admin_record_hall_of_fame_handler(update: Update, context: ContextType
     )
     await safe_reply(update.message, msg)
 
+
+@admin_required("SUPER_ADMIN")
+async def admin_trigger_renewal_reminders_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await safe_reply(update.message, "⏳ **CHECKING & SENDING AUTOMATED SEASON RENEWAL DM REMINDERS...**")
+    from services.season_reminder_service import SeasonReminderService
+    res = await SeasonReminderService.run_renewal_reminder_check(bot=context.bot, force=True)
+
+    msg = (
+        "📢 **SEASON RENEWAL REMINDERS SENT!** 📬\n\n"
+        f"• **Status:** `{res.get('status')}`\n"
+        f"• **Total Renewal DM Reminders Delivered:** `{res.get('sent_count', 0)}`\n"
+        f"• **Purge Deadline Date:** `{res.get('purge_deadline')}`"
+    )
+    await safe_reply(update.message, msg)
+
     async with get_db_session() as session:
         stmt = select(User).order_by(User.id.asc())
         res = await session.execute(stmt)
