@@ -114,26 +114,27 @@ class AuthService:
             )
 
 
-def admin_required(required_role: Optional[str] = None):
+def admin_required(*allowed_roles):
     def decorator(func):
         @functools.wraps(func)
         async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
             user = update.effective_user
-            if not user:
-                return
-
-            if not AuthService.is_authorized_admin(user.id, required_role):
-                logger.warning(f"Unauthorized admin command attempt by Telegram ID {user.id} ({user.full_name}).")
-                await AuthService.log_unauthorized_attempt(user.id, func.__name__)
-                msg = "⚠️ **ACCESS DENIED**\n\nYou are not authorized to perform this administrative command."
+            if not user or not AuthService.is_authorized_admin(user.id):
+                target_msg = update.callback_query.message if update.callback_query else update.message
                 if update.callback_query:
-                    await update.callback_query.answer("Access Denied", show_alert=True)
-                    await update.callback_query.message.reply_text(msg, parse_mode="Markdown")
-                elif update.message:
-                    await update.message.reply_text(msg, parse_mode="Markdown")
+                    await update.callback_query.answer("Unauthorized", show_alert=True)
+                await target_msg.reply_text("⛔ **UNAUTHORIZED:** Admin access required.", parse_mode="Markdown")
                 return
 
-            context.user_role = AuthService.get_admin_role(user.id)
+            if allowed_roles:
+                user_role = AuthService.get_admin_role(user.id)
+                if user_role not in allowed_roles:
+                    target_msg = update.callback_query.message if update.callback_query else update.message
+                    if update.callback_query:
+                        await update.callback_query.answer("Unauthorized Role", show_alert=True)
+                    await target_msg.reply_text(f"⛔ **UNAUTHORIZED:** Requires role: {', '.join(allowed_roles)}", parse_mode="Markdown")
+                    return
+
             return await func(update, context, *args, **kwargs)
         return wrapper
     return decorator
