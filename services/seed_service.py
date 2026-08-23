@@ -18,14 +18,6 @@ async def auto_seed_production_users():
 
     core_members = [
         {
-            "telegram_id": 6948840492,
-            "telegram_username": "DSm_11422",
-            "full_name": "Odeyemi Omogbolahan",
-            "bank_name": "Palmpay",
-            "account_name": "Odeyemi Omogbolahan",
-            "account_number": "8066106785"
-        },
-        {
             "telegram_id": 1703339441,
             "telegram_username": "SuperAdmin",
             "full_name": "FEG Super Admin",
@@ -37,6 +29,14 @@ async def auto_seed_production_users():
             "telegram_id": 2142855199,
             "telegram_username": "FinanceAdmin",
             "full_name": "FEG Finance Admin",
+            "bank_name": "Palmpay",
+            "account_name": "Odeyemi Omogbolahan",
+            "account_number": "8066106785"
+        },
+        {
+            "telegram_id": 7017254512,
+            "telegram_username": "ContentAdmin",
+            "full_name": "FEG Content Admin",
             "bank_name": "Palmpay",
             "account_name": "Odeyemi Omogbolahan",
             "account_number": "8066106785"

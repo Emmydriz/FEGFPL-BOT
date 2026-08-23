@@ -543,9 +543,7 @@ async def process_and_restore_member_from_text(msg, target_msg, text: str):
             await safe_reply(msg, "⚠️ Could not extract Telegram User ID from message. Ensure the message contains `Telegram ID: 123456789` or forward directly.")
         return
 
-    raw_name = name_match.group(1).strip() if name_match else None
-    if not raw_name or raw_name in ["Braces", "FEG Member", "Member", "Not set"]:
-        raw_name = target_msg.forward_from.full_name if target_msg.forward_from else f"FEG Member {tid}"
+    raw_name = name_match.group(1).strip() if name_match else (target_msg.forward_from.full_name if target_msg.forward_from else f"FEG Member {tid}")
 
     username = target_msg.forward_from.username if target_msg.forward_from else None
     user_match = re.search(r"\(@([a-zA-Z0-9_]+)\)", text)
@@ -562,9 +560,9 @@ async def process_and_restore_member_from_text(msg, target_msg, text: str):
                 telegram_username=username
             )
         else:
-            if not user.full_name or user.full_name in ["Braces", "FEG Member", "Member", "Not set"]:
+            if raw_name:
                 user.full_name = raw_name
-            if username and not user.telegram_username:
+            if username:
                 user.telegram_username = username
 
         user.registration_status = "COMMUNITY_ACCESS_GRANTED"
