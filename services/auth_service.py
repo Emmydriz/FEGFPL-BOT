@@ -155,6 +155,28 @@ def approved_member_required():
                 user = await MemberService.get_user_by_telegram_id(session, user_tg.id)
 
                 if not user or user.registration_status not in ["APPROVED", "COMMUNITY_ACCESS_GRANTED"]:
+                    # Automatic Community Group Member Restoration Check
+                    if settings.FEG_COMMUNITY_CHAT_ID and context.bot:
+                        try:
+                            chat_member = await context.bot.get_chat_member(
+                                chat_id=settings.FEG_COMMUNITY_CHAT_ID,
+                                user_id=user_tg.id
+                            )
+                            if chat_member and chat_member.status in ["member", "administrator", "creator"]:
+                                if not user:
+                                    user = await MemberService.get_or_start_registration(
+                                        session=session,
+                                        telegram_id=user_tg.id,
+                                        full_name=user_tg.full_name,
+                                        telegram_username=user_tg.username
+                                    )
+                                user.registration_status = "COMMUNITY_ACCESS_GRANTED"
+                                await session.commit()
+                                logger.info(f"Auto-restored member account for Telegram User ID {user_tg.id} in decorator check.")
+                                return await func(update, context, *args, **kwargs)
+                        except Exception as ex:
+                            logger.warning(f"Could not verify group chat membership in decorator for User {user_tg.id}: {ex}")
+
                     msg = (
                         "🔒 **RESTRICTED MEMBER COMMAND**\n\n"
                         "This command is exclusive to verified paid members of the FEG FPL Community.\n\n"

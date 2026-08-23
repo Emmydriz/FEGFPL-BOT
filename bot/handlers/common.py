@@ -51,6 +51,26 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db_user = await MemberService.get_user_by_telegram_id(session, user.id)
             if db_user and db_user.registration_status in ["APPROVED", "COMMUNITY_ACCESS_GRANTED"]:
                 is_approved = True
+            elif settings.FEG_COMMUNITY_CHAT_ID:
+                try:
+                    chat_member = await context.bot.get_chat_member(
+                        chat_id=settings.FEG_COMMUNITY_CHAT_ID,
+                        user_id=user.id
+                    )
+                    if chat_member and chat_member.status in ["member", "administrator", "creator"]:
+                        if not db_user:
+                            db_user = await MemberService.get_or_start_registration(
+                                session=session,
+                                telegram_id=user.id,
+                                full_name=user.full_name,
+                                telegram_username=user.username
+                            )
+                        db_user.registration_status = "COMMUNITY_ACCESS_GRANTED"
+                        await session.commit()
+                        is_approved = True
+                        logger.info(f"Auto-restored member account for Telegram User ID {user.id} ({user.full_name}) found in community group.")
+                except Exception as ex:
+                    logger.warning(f"Could not verify group chat membership for Telegram User {user.id}: {ex}")
 
     if not is_approved:
         # Unapproved / New Registering Member View (Commands Directory NOT Revealed)
