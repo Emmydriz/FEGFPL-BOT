@@ -33,7 +33,8 @@ from bot.handlers.admin import (
     announce_gw_winner_handler,
     admin_members_list_handler,
     admin_audit_logs_handler,
-    view_member_detail_callback
+    view_member_detail_callback,
+    admin_update_member_handler
 )
 from bot.handlers.hall_of_fame import (
     hall_of_fame_handler,
@@ -214,6 +215,8 @@ def build_app():
     app.add_handler(CommandHandler("set_pay_account", admin_set_payment_account_handler))
     app.add_handler(CommandHandler("search_member", search_member_admin_handler))
     app.add_handler(CommandHandler("member", search_member_admin_handler))
+    app.add_handler(CommandHandler("admin_update_member", admin_update_member_handler))
+    app.add_handler(CommandHandler("update_member", admin_update_member_handler))
     app.add_handler(CommandHandler("admin_referrals", admin_referrals_tracker_handler))
     app.add_handler(CommandHandler("audit_logs", admin_audit_logs_handler))
     app.add_handler(CommandHandler("auditlogs", admin_audit_logs_handler))

@@ -317,6 +317,93 @@ async def render_full_member_profile(update: Update, context: ContextTypes.DEFAU
     await safe_reply(target_msg, msg)
 
 
+@admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
+async def admin_update_member_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.replace("/admin_update_member", "").replace("/update_member", "").strip()
+    parts = [p.strip() for p in text.split("|") if p.strip()]
+
+    if len(parts) != 6:
+        await safe_reply(
+            update.message,
+            "⚠️ **INVALID FORMAT**\n\n"
+            "Usage: `/admin_update_member TelegramID_or_MemberID | Full Name | FPL ID | Bank Name | Account Name | Account Number`\n\n"
+            "Example:\n`/admin_update_member 6948840492 | Odeyemi Omogbolahan | 672262 | Palmpay | Odeyemi Omogbolahan | 8066106785`"
+        )
+        return
+
+    target_id, full_name, fpl_id_str, bank_name, account_name, account_number = parts
+
+    async with get_db_session() as session:
+        user = None
+        if target_id.isdigit():
+            user = await MemberService.get_user_by_telegram_id(session, int(target_id))
+        if not user:
+            stmt = select(User).where(User.feg_member_id == target_id)
+            user = (await session.execute(stmt)).scalar_one_or_none()
+
+        if not user:
+            await safe_reply(update.message, f"❌ Member '{target_id}' not found in database.")
+            return
+
+        user.full_name = full_name
+        user.registration_status = "COMMUNITY_ACCESS_GRANTED"
+
+        if fpl_id_str.isdigit():
+            fpl_id = int(fpl_id_str)
+            mgr, team = await FPLService.get_user_fpl_details(fpl_id)
+            stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
+            fpl = (await session.execute(stmt_f)).scalar_one_or_none()
+
+            is_classic = await FPLService.check_league_membership(settings.FPL_CLASSIC_LEAGUE_ID, fpl_id, "classic")
+            is_h2h = await FPLService.check_league_membership(settings.FPL_H2H_LEAGUE_ID, fpl_id, "h2h")
+
+            if not fpl:
+                fpl = FPLProfile(
+                    user_id=user.id,
+                    fpl_id=fpl_id,
+                    manager_name=mgr or full_name,
+                    team_name=team or "FEG FC",
+                    classic_status="VERIFIED" if is_classic else "PENDING",
+                    h2h_status="VERIFIED" if is_h2h else "PENDING"
+                )
+                session.add(fpl)
+            else:
+                fpl.fpl_id = fpl_id
+                fpl.manager_name = mgr or full_name
+                fpl.team_name = team or "FEG FC"
+                fpl.classic_status = "VERIFIED" if is_classic else "PENDING"
+                fpl.h2h_status = "VERIFIED" if is_h2h else "PENDING"
+
+        stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == user.id)
+        payout = (await session.execute(stmt_p)).scalar_one_or_none()
+        enc_num = encrypt_string(account_number)
+        masked_num = mask_account_number(account_number)
+
+        if not payout:
+            payout = PayoutAccount(
+                user_id=user.id,
+                bank_name=bank_name,
+                account_name=account_name,
+                encrypted_account_number=enc_num,
+                masked_account_number=masked_num
+            )
+            session.add(payout)
+        else:
+            payout.bank_name = bank_name
+            payout.account_name = account_name
+            payout.encrypted_account_number = enc_num
+            payout.masked_account_number = masked_num
+
+        await session.commit()
+        await safe_reply(
+            update.message,
+            f"✅ **MEMBER PROFILE UPDATED BY ADMIN!**\n\n"
+            f"• **Member:** {escape_markdown(user.full_name)} (`{user.feg_member_id}`)\n"
+            f"• **FPL ID:** `{fpl_id_str}`\n"
+            f"• **Bank:** {escape_markdown(bank_name)} / {escape_markdown(account_name)} / `{masked_num}`"
+        )
+
+
 @admin_required()
 async def admin_pending_payments_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
