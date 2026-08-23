@@ -18,7 +18,7 @@ class AuthService:
 
     @classmethod
     def get_admin_role(cls, telegram_id: int) -> Optional[str]:
-        if telegram_id == settings.ADMIN_SUPER_ID or telegram_id in [1703339441, 6948840492]:
+        if telegram_id == settings.ADMIN_SUPER_ID or telegram_id == 1703339441:
             cls.register_admin(telegram_id)
             return "SUPER_ADMIN"
         elif telegram_id == settings.ADMIN_FINANCE_ID or telegram_id == 2142855199:

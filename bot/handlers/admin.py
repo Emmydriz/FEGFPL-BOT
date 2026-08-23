@@ -588,33 +588,39 @@ async def process_and_restore_member_from_text(msg, target_msg, text: str):
 
         # FPL Profile
         fpl_id = int(fpl_id_match.group(1)) if fpl_id_match else None
-        if fpl_id:
-            mgr, team = await FPLService.get_user_fpl_details(fpl_id)
-            stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
-            fpl_p = (await session.execute(stmt_f)).scalar_one_or_none()
+        manager_match = re.search(r"Manager:\s*([^\n\•\*\`]+)", text, re.IGNORECASE)
+        team_match = re.search(r"Team:\s*([^\n\•\*\`]+)", text, re.IGNORECASE) or re.search(r"Team Name:\s*([^\n\•\*\`]+)", text, re.IGNORECASE)
+        extracted_mgr = manager_match.group(1).strip() if manager_match else None
+        extracted_team = team_match.group(1).strip() if team_match else None
 
-            is_classic = await FPLService.check_league_membership(settings.FPL_CLASSIC_LEAGUE_ID, fpl_id, "classic")
-            is_h2h = await FPLService.check_league_membership(settings.FPL_H2H_LEAGUE_ID, fpl_id, "h2h")
+        stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
+        fpl_p = (await session.execute(stmt_f)).scalar_one_or_none()
+
+        if fpl_id:
+            mgr_name = extracted_mgr or user.full_name
+            team_n = extracted_team or "FEG FC"
 
             if not fpl_p:
                 fpl_p = FPLProfile(
                     user_id=user.id,
                     fpl_id=fpl_id,
-                    manager_name=mgr or user.full_name,
-                    team_name=team or "FEG FC",
-                    classic_status="VERIFIED" if is_classic else "VERIFIED",
-                    h2h_status="VERIFIED" if is_h2h else "VERIFIED"
+                    manager_name=mgr_name,
+                    team_name=team_n,
+                    classic_status="VERIFIED",
+                    h2h_status="VERIFIED"
                 )
                 session.add(fpl_p)
             else:
                 fpl_p.fpl_id = fpl_id
-                fpl_p.manager_name = mgr or user.full_name
-                fpl_p.team_name = team or "FEG FC"
+                fpl_p.manager_name = mgr_name
+                fpl_p.team_name = team_n
                 fpl_p.classic_status = "VERIFIED"
                 fpl_p.h2h_status = "VERIFIED"
-        else:
-            stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
-            fpl_p = (await session.execute(stmt_f)).scalar_one_or_none()
+        elif fpl_p and (extracted_mgr or extracted_team):
+            if extracted_mgr:
+                fpl_p.manager_name = extracted_mgr
+            if extracted_team:
+                fpl_p.team_name = extracted_team
 
         # Bank Account
         bname = bank_match.group(1).strip() if bank_match else "Palmpay"
