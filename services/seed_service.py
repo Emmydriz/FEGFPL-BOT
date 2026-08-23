@@ -4,6 +4,7 @@ from database.db import get_db_session
 from database.models import User, FPLProfile, PayoutAccount, Payment
 from database.crypto import encrypt_string, mask_account_number
 from services.member_service import MemberService
+from services.backup_service import BackupService
 
 logger = logging.getLogger("feg_fpl")
 
@@ -253,3 +254,7 @@ async def auto_seed_production_users():
 
         await session.commit()
         logger.info("Production member profile auto-seed completed successfully.")
+        
+        # Restore JSON backup if existing, and write latest snapshot
+        await BackupService.restore_members_from_json_if_needed()
+        await BackupService.backup_all_members_to_json()

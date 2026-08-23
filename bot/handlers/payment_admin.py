@@ -45,6 +45,10 @@ async def admin_approve_payment_callback(update: Update, context: ContextTypes.D
         member_name = user.full_name
         member_feg_id = user.feg_member_id
 
+    # Backup members to JSON snapshot file
+    from services.backup_service import BackupService
+    await BackupService.backup_all_members_to_json()
+
     # 1. Update Admin DM UI
     await query.message.edit_caption(
         caption=(

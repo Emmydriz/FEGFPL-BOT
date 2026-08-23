@@ -37,6 +37,7 @@ from bot.handlers.admin import (
     admin_audit_logs_handler,
     view_member_detail_callback,
     admin_update_member_handler,
+    admin_update_account_handler,
     export_members_admin_handler,
     admin_import_forwarded_message_handler,
     restore_member_command_handler
@@ -222,6 +223,8 @@ def build_app():
     app.add_handler(CommandHandler("member", search_member_admin_handler))
     app.add_handler(CommandHandler("admin_update_member", admin_update_member_handler))
     app.add_handler(CommandHandler("update_member", admin_update_member_handler))
+    app.add_handler(CommandHandler("update_account", admin_update_account_handler))
+    app.add_handler(CommandHandler("update_bank", admin_update_account_handler))
     app.add_handler(CommandHandler("restore_member", restore_member_command_handler))
     app.add_handler(CommandHandler("restore_profile", restore_member_command_handler))
     app.add_handler(CommandHandler("export_members", export_members_admin_handler))

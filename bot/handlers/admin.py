@@ -395,12 +395,89 @@ async def admin_update_member_handler(update: Update, context: ContextTypes.DEFA
             payout.masked_account_number = masked_num
 
         await session.commit()
+        from services.backup_service import BackupService
+        await BackupService.backup_all_members_to_json()
+
         await safe_reply(
             update.message,
             f"✅ **MEMBER PROFILE UPDATED BY ADMIN!**\n\n"
             f"• **Member:** {escape_markdown(user.full_name)} (`{user.feg_member_id}`)\n"
             f"• **FPL ID:** `{fpl_id_str}`\n"
             f"• **Bank:** {escape_markdown(bank_name)} / {escape_markdown(account_name)} / `{masked_num}`"
+        )
+
+
+async def admin_update_account_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.replace("/update_account", "").replace("/update_bank", "").strip()
+    parts = text.split()
+
+    if len(parts) < 2:
+        await safe_reply(
+            update.message,
+            "⚠️ **USAGE:**\n`/update_account <MemberID_or_TelegramID> <Account_Number> [Bank_Name] [Account_Name]`\n\n"
+            "**Examples:**\n"
+            "• `/update_account FEG-2026-000001 8066106785`\n"
+            "• `/update_account 6948840492 8066106785 Opay \"Ilesanmi Emmanuel Eniola\"`"
+        )
+        return
+
+    target_id = parts[0].strip()
+    acc_num = parts[1].strip()
+    bank_name = parts[2].strip() if len(parts) > 2 else None
+    acc_name = " ".join(parts[3:]).strip() if len(parts) > 3 else None
+
+    async with get_db_session() as session:
+        user = None
+        if target_id.isdigit():
+            user = await MemberService.get_user_by_telegram_id(session, int(target_id))
+        if not user:
+            stmt = select(User).where(User.feg_member_id == target_id.upper())
+            user = (await session.execute(stmt)).scalar_one_or_none()
+
+        if not user:
+            await safe_reply(update.message, f"❌ Member '{target_id}' not found in database.")
+            return
+
+        stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == user.id)
+        payout = (await session.execute(stmt_p)).scalar_one_or_none()
+
+        enc_num = encrypt_string(acc_num)
+        masked_num = mask_account_number(acc_num)
+        b_name = bank_name or (payout.bank_name if payout else "Palmpay")
+        a_name = acc_name or (payout.account_name if payout else user.full_name)
+
+        if not payout:
+            payout = PayoutAccount(
+                user_id=user.id,
+                bank_name=b_name,
+                account_name=a_name,
+                encrypted_account_number=enc_num,
+                masked_account_number=masked_num
+            )
+            session.add(payout)
+        else:
+            payout.bank_name = b_name
+            payout.account_name = a_name
+            payout.encrypted_account_number = enc_num
+            payout.masked_account_number = masked_num
+
+        await session.commit()
+
+        # Update JSON file backup
+        from services.backup_service import BackupService
+        await BackupService.backup_all_members_to_json()
+
+        full_dec = decrypt_string(payout.encrypted_account_number)
+
+        await safe_reply(
+            update.message,
+            f"✅ **MEMBER BANK ACCOUNT UPDATED!**\n\n"
+            f"• **Member:** {escape_markdown(user.full_name)} (`{user.feg_member_id}`)\n"
+            f"• **Telegram ID:** `{user.telegram_id}` (@{user.telegram_username or 'NoUsername'})\n"
+            f"• **Bank Name:** {escape_markdown(payout.bank_name)}\n"
+            f"• **Account Name:** {escape_markdown(payout.account_name)}\n"
+            f"• **Full Decrypted Account Number (Admin View):** `{full_dec}`\n"
+            f"• **Masked Account Number (Member View):** `{payout.masked_account_number}`"
         )
 
 

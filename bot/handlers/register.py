@@ -6,6 +6,7 @@ from config.settings import settings
 from config.logging_config import logger
 from database.db import get_db_session
 from database.models import User, FPLProfile, PayoutAccount
+from database.crypto import decrypt_string
 from services.fpl_service import FPLService
 from services.member_service import MemberService
 from services.payment_service import PaymentService
@@ -400,7 +401,12 @@ async def payment_proof_handler(update: Update, context: ContextTypes.DEFAULT_TY
         team_name = fpl.team_name if fpl else "N/A"
         payout_bank = payout.bank_name if payout else "N/A"
         payout_acc_name = payout.account_name if payout else "N/A"
-        payout_acc_num = payout.masked_account_number if payout else "N/A"
+        payout_acc_num = "N/A"
+        if payout and payout.encrypted_account_number:
+            try:
+                payout_acc_num = decrypt_string(payout.encrypted_account_number)
+            except Exception:
+                payout_acc_num = payout.masked_account_number or "N/A"
         payment_id = payment.id
 
     msg = (
