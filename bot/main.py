@@ -85,7 +85,7 @@ async def post_init(application):
     logger.info("Database initialized successfully.")
 
     try:
-        from scratch.seed_missing_user_details import auto_seed_production_users
+        from services.seed_service import auto_seed_production_users
         await auto_seed_production_users()
     except Exception as e:
         logger.warning(f"Production auto-seed warning: {e}")
