@@ -471,7 +471,6 @@ async def export_members_admin_handler(update: Update, context: ContextTypes.DEF
         )
 
 
-@admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
 async def admin_import_forwarded_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if not msg:
@@ -486,10 +485,14 @@ async def admin_import_forwarded_message_handler(update: Update, context: Contex
     if not text or text.startswith("/"):
         return
 
+    # Check if text contains member registration or profile card patterns
+    has_member_card = any(k in text for k in ["MEMBER DETAILS", "Full Name:", "FEG Member ID", "Telegram:", "Telegram ID:", "FPL DETAILS", "FPL ID:", "PAYOUT BANK DETAILS", "Bank:"])
+    if not has_member_card:
+        return
+
     await process_and_restore_member_from_text(msg, target_msg, text)
 
 
-@admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
 async def restore_member_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if not msg:
