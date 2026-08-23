@@ -471,6 +471,110 @@ async def export_members_admin_handler(update: Update, context: ContextTypes.DEF
         )
 
 
+@admin_required("SUPER_ADMIN", "FINANCE_ADMIN")
+async def admin_import_forwarded_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
+    text = msg.text or msg.caption or ""
+
+    if not text:
+        return
+
+    tg_id_match = re.search(r"Telegram ID:\s*`?(\d{6,11})`?", text, re.IGNORECASE) or re.search(r"User ID:\s*`?(\d{6,11})`?", text, re.IGNORECASE)
+    name_match = re.search(r"Full Name:\s*([^\n]+)", text, re.IGNORECASE) or re.search(r"Member:\s*([^\n]+)", text, re.IGNORECASE)
+    fpl_id_match = re.search(r"FPL ID:\s*`?(\d{4,9})`?", text, re.IGNORECASE)
+    bank_match = re.search(r"Bank:\s*([^\n]+)", text, re.IGNORECASE)
+    acc_name_match = re.search(r"Account Name:\s*([^\n]+)", text, re.IGNORECASE)
+    acc_num_match = re.search(r"Account Number:\s*`?(\d{8,11})`?", text, re.IGNORECASE)
+
+    if not (tg_id_match or name_match or fpl_id_match):
+        return
+
+    tid = int(tg_id_match.group(1)) if tg_id_match else (msg.forward_from.id if msg.forward_from else None)
+    if not tid:
+        await safe_reply(msg, "⚠️ Could not extract Telegram User ID from forwarded text.")
+        return
+
+    full_name = name_match.group(1).strip() if name_match else (msg.forward_from.full_name if msg.forward_from else f"FEG Member {tid}")
+    username = msg.forward_from.username if msg.forward_from else None
+
+    async with get_db_session() as session:
+        user = await MemberService.get_user_by_telegram_id(session, tid)
+        if not user:
+            user = await MemberService.get_or_start_registration(
+                session=session,
+                telegram_id=tid,
+                full_name=full_name,
+                telegram_username=username
+            )
+        else:
+            user.full_name = full_name
+            if username:
+                user.telegram_username = username
+
+        user.registration_status = "COMMUNITY_ACCESS_GRANTED"
+
+        fpl_id = int(fpl_id_match.group(1)) if fpl_id_match else None
+        if fpl_id:
+            mgr, team = await FPLService.get_user_fpl_details(fpl_id)
+            stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
+            fpl_p = (await session.execute(stmt_f)).scalar_one_or_none()
+
+            is_classic = await FPLService.check_league_membership(settings.FPL_CLASSIC_LEAGUE_ID, fpl_id, "classic")
+            is_h2h = await FPLService.check_league_membership(settings.FPL_H2H_LEAGUE_ID, fpl_id, "h2h")
+
+            if not fpl_p:
+                fpl_p = FPLProfile(
+                    user_id=user.id,
+                    fpl_id=fpl_id,
+                    manager_name=mgr or full_name,
+                    team_name=team or "FEG FC",
+                    classic_status="VERIFIED" if is_classic else "PENDING",
+                    h2h_status="VERIFIED" if is_h2h else "PENDING"
+                )
+                session.add(fpl_p)
+            else:
+                fpl_p.fpl_id = fpl_id
+                fpl_p.manager_name = mgr or full_name
+                fpl_p.team_name = team or "FEG FC"
+                fpl_p.classic_status = "VERIFIED" if is_classic else "PENDING"
+                fpl_p.h2h_status = "VERIFIED" if is_h2h else "PENDING"
+
+        bname = bank_match.group(1).strip() if bank_match else None
+        aname = acc_name_match.group(1).strip() if acc_name_match else None
+        anum = acc_num_match.group(1).strip() if acc_num_match else None
+
+        if bname and aname and anum:
+            stmt_p = select(PayoutAccount).where(PayoutAccount.user_id == user.id)
+            payout_p = (await session.execute(stmt_p)).scalar_one_or_none()
+            enc_num = encrypt_string(anum)
+            masked_num = mask_account_number(anum)
+
+            if not payout_p:
+                payout_p = PayoutAccount(
+                    user_id=user.id,
+                    bank_name=bname,
+                    account_name=aname,
+                    encrypted_account_number=enc_num,
+                    masked_account_number=masked_num
+                )
+                session.add(payout_p)
+            else:
+                payout_p.bank_name = bname
+                payout_p.account_name = aname
+                payout_p.encrypted_account_number = enc_num
+                payout_p.masked_account_number = masked_num
+
+        await session.commit()
+        await safe_reply(
+            msg,
+            f"✅ **MEMBER RECORD PARSED & RESTORED!**\n\n"
+            f"• **Member:** {escape_markdown(user.full_name)} (`{user.feg_member_id}`)\n"
+            f"• **Telegram ID:** `{tid}`\n"
+            f"• **FPL ID:** `{fpl_id or 'N/A'}`\n"
+            f"• **Bank Account:** {escape_markdown(bname or 'N/A')} / {escape_markdown(aname or 'N/A')} / `{anum or 'N/A'}`"
+        )
+
+
 @admin_required()
 async def admin_pending_payments_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:

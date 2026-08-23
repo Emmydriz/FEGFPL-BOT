@@ -56,8 +56,9 @@ async def auto_seed_production_users():
                     telegram_username=m.get("telegram_username")
                 )
             else:
-                user.full_name = m["full_name"]
-                if m.get("telegram_username"):
+                if not user.full_name or user.full_name in ["Braces", "FEG Member", "Member"] or "FEG Member" in user.full_name:
+                    user.full_name = m["full_name"]
+                if m.get("telegram_username") and not user.telegram_username:
                     user.telegram_username = m["telegram_username"]
 
             user.registration_status = "COMMUNITY_ACCESS_GRANTED"

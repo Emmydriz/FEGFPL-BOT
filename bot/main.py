@@ -35,7 +35,8 @@ from bot.handlers.admin import (
     admin_audit_logs_handler,
     view_member_detail_callback,
     admin_update_member_handler,
-    export_members_admin_handler
+    export_members_admin_handler,
+    admin_import_forwarded_message_handler
 )
 from bot.handlers.hall_of_fame import (
     hall_of_fame_handler,
@@ -228,6 +229,7 @@ def build_app():
     app.add_handler(CommandHandler("addwinner", add_winner_fallback_handler))
     app.add_handler(CommandHandler("add_winner", add_winner_fallback_handler))
     app.add_handler(CommandHandler("announce_gw_winner", announce_gw_winner_handler))
+    app.add_handler(MessageHandler(filters.FORWARDED, admin_import_forwarded_message_handler))
 
     # Payment Approval & Rejection Callbacks
     app.add_handler(CallbackQueryHandler(admin_approve_payment_callback, pattern="^approve_pay_"))
