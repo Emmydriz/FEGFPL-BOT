@@ -12,7 +12,7 @@ from database.repository import (
     create_payment_account_config,
     add_audit_log
 )
-from services.auth_service import admin_required
+from services.auth_service import AuthService, admin_required
 from services.member_service import MemberService
 from services.fpl_service import FPLService
 from services.referral_service import ReferralService
@@ -698,7 +698,6 @@ async def _save_and_confirm_account_update(update: Update, context: ContextTypes
     await safe_reply(update.message, msg)
 
     # Broadcast update notification to all payment admins in DM
-    from services.auth_service import AuthService
     admin_ids = AuthService.get_payment_admin_ids()
 
     admin_dm_msg = (
