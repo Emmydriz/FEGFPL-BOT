@@ -152,19 +152,40 @@ async def admin_approve_renewal_callback(update: Update, context: ContextTypes.D
             await query.message.reply_text("⚠️ Member record not found.")
             return
 
+        prev_status = user.membership_status
         user.membership_status = "ACTIVE"
         user.renewal_payment_status = "APPROVED"
         user.registration_status = "COMMUNITY_ACCESS_GRANTED"
 
-        # Generate community invite link
-        invite = await CommunityService.create_one_time_invite(
-            session=session,
-            user=user,
-            bot=context.bot
-        )
-        community_link = invite.invite_link
+        # Check if member is already in the community group chat
+        is_in_group = False
+        if settings.FEG_COMMUNITY_CHAT_ID and user.telegram_id:
+            try:
+                cm = await context.bot.get_chat_member(
+                    chat_id=settings.FEG_COMMUNITY_CHAT_ID,
+                    user_id=user.telegram_id
+                )
+                if cm and cm.status in ["member", "administrator", "creator"]:
+                    is_in_group = True
+            except Exception as ex:
+                logger.warning(f"Group check in renewal approval for User {user.telegram_id}: {ex}")
+
+        # Send invite link ONLY to purged/expired members who are not currently in the group
+        needs_invite_link = not is_in_group and prev_status == "EXPIRED"
+        community_link = None
+
+        if needs_invite_link:
+            invite = await CommunityService.create_one_time_invite(
+                session=session,
+                user=user,
+                bot=context.bot
+            )
+            community_link = invite.invite_link
+
         member_telegram_id = user.telegram_id
         member_feg_id = user.feg_member_id
+        member_full_name = user.full_name
+        current_season = user.current_season or "2026/2027"
 
     # Backup members to JSON snapshot file
     from services.backup_service import BackupService
@@ -175,22 +196,35 @@ async def admin_approve_renewal_callback(update: Update, context: ContextTypes.D
         parse_mode="Markdown"
     )
 
-    member_msg = (
-        "🎉 **MEMBERSHIP RENEWAL APPROVED!** 🎉\n\n"
-        "Your FEG FPL membership renewal payment has been verified and approved!\n"
-        f"👤 **FEG Member ID:** `{member_feg_id}`\n"
-        "• **Membership Status:** ACTIVE\n\n"
-        "Click the button below to access the private FEG Telegram Community:"
-    )
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚀 ENTER FEG COMMUNITY", url=community_link)]
-    ])
+    if needs_invite_link and community_link:
+        member_msg = (
+            "🎉 **MEMBERSHIP RENEWAL & RE-ENTRY APPROVED!** 🎉\n\n"
+            f"Hi **{member_full_name}**! Your FEG FPL membership renewal payment for the **{current_season}** season has been verified and approved!\n\n"
+            f"👤 **FEG Member ID:** `{member_feg_id}`\n"
+            f"• **Membership Status:** `ACTIVE` (Renewed)\n"
+            f"• **Season:** `{current_season}`\n\n"
+            "Click the button below to re-join the private FEG Telegram Community:"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 RE-JOIN FEG COMMUNITY", url=community_link)]
+        ])
+        reply_markup = keyboard
+    else:
+        member_msg = (
+            "🎉 **MEMBERSHIP RENEWAL APPROVED!** 🎉\n\n"
+            f"Hi **{member_full_name}**! Your FEG FPL annual membership renewal for the **{current_season}** season has been verified and approved!\n\n"
+            f"👤 **FEG Member ID:** `{member_feg_id}`\n"
+            f"• **Membership Status:** `ACTIVE` (Renewed)\n"
+            f"• **Season:** `{current_season}`\n\n"
+            "Thank you for renewing! Your community access remains fully active. Good luck in the upcoming season! ⚽🏆"
+        )
+        reply_markup = None
 
     try:
         await context.bot.send_message(
             chat_id=member_telegram_id,
             text=member_msg,
-            reply_markup=keyboard,
+            reply_markup=reply_markup,
             parse_mode="Markdown"
         )
     except Exception as e:
