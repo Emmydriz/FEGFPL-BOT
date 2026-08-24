@@ -484,6 +484,24 @@ async def start_update_account_flow(update: Update, context: ContextTypes.DEFAUL
     raw_args = full_text[len(cmd_name):].strip()
 
     if raw_args:
+        # Check if direct one-shot update was provided (e.g. /updateaccount FEG-2026-000001 8066106785 Opay)
+        if "|" in raw_args:
+            parts = [p.strip() for p in raw_args.split("|") if p.strip()]
+        else:
+            parts = raw_args.split()
+
+        if len(parts) >= 2 and parts[1].replace("-", "").isdigit():
+            target_id = parts[0].strip()
+            new_acc = parts[1].strip().replace("-", "")
+            new_bank = parts[2].strip() if len(parts) > 2 else None
+
+            async with get_db_session() as session:
+                user = await _lookup_member_for_update(session, target_id)
+                if user:
+                    context.user_data["update_target_user_id"] = user.id
+                    return await _save_and_confirm_account_update(update, context, new_bank=new_bank, new_acc=new_acc)
+
+        # Otherwise treat as single member lookup identifier
         async with get_db_session() as session:
             user = await _lookup_member_for_update(session, raw_args)
             if user:
@@ -503,6 +521,9 @@ async def start_update_account_flow(update: Update, context: ContextTypes.DEFAUL
 
                 await _show_state2_choice_prompt(update.message, user, b_name, dec_acc)
                 return STATE_WAIT_CHOICE
+
+            await safe_reply(update.message, f"No member found matching '{raw_args}'. Please send the member's Telegram username or Telegram ID.")
+            return STATE_WAIT_IDENTIFIER
 
     await safe_reply(
         update.message,
@@ -646,11 +667,32 @@ async def _save_and_confirm_account_update(update: Update, context: ContextTypes
             details=f"Updated Bank Details. Old: [Bank: {old_bank}, Account: {old_acc_dec}] -> New: [Bank: {final_bank}, Account: {final_acc}]"
         )
 
+        stmt_f = select(FPLProfile).where(FPLProfile.user_id == user.id)
+        fpl = (await session.execute(stmt_f)).scalar_one_or_none()
+
     # State 4 Confirmation
+    fpl_id_str = str(fpl.fpl_id) if fpl else "N/A"
+    mgr_name = fpl.manager_name if fpl else "N/A"
+    team_name = fpl.team_name if fpl else "N/A"
+
     msg = (
-        f"Account details updated successfully for **{user.full_name}**.\n\n"
-        f"🏦 **Bank Name:** {final_bank}\n"
-        f"🔢 **Account Number:** `{final_acc}`"
+        "✅ **MEMBER BANK ACCOUNT DETAILS UPDATED & APPROVED!** 🏦\n\n"
+        "👤 **MEMBER DETAILS:**\n"
+        f"• **Full Name:** {escape_markdown(user.full_name)}\n"
+        f"• **FEG Member ID:** `{user.feg_member_id}`\n"
+        f"• **Telegram ID:** `{user.telegram_id}` (@{escape_markdown(user.telegram_username or 'NoUsername')})\n"
+        f"• **Registration Status:** `{user.registration_status}`\n"
+        f"• **Membership Status:** `{user.membership_status}`\n\n"
+        "⚽ **FPL DETAILS:**\n"
+        f"• **FPL ID:** `{fpl_id_str}`\n"
+        f"• **Manager:** {escape_markdown(mgr_name)}\n"
+        f"• **Team Name:** {escape_markdown(team_name)}\n\n"
+        "🏦 **UPDATED PAYOUT BANK DETAILS:**\n"
+        f"• **Bank Name:** {escape_markdown(final_bank)}\n"
+        f"• **Account Name:** {escape_markdown(payout.account_name if payout else user.full_name)}\n"
+        f"• **Full Unmasked Account Number (Admin View):** `{final_acc}`\n"
+        f"• **Masked Account Number (Member View):** `{masked_acc}`\n\n"
+        "💾 *Successfully updated in database and synchronized to persistent JSON backup snapshot.*"
     )
     await safe_reply(update.message, msg)
 
@@ -692,7 +734,7 @@ async def update_account_acc_num_only_handler(update: Update, context: ContextTy
 
     clean_acc = text.replace("-", "").replace(" ", "")
     if not clean_acc.isdigit() or len(clean_acc) != 10:
-        await safe_reply(update.message, "That doesn't look like a valid account number. Please try again, or send /cancel to stop.")
+        await safe_reply(update.message, "That doesn't look like a valid account number. Please try again (send a 10-digit NUBAN account number), or send /cancel to stop.")
         return STATE_WAIT_ACC_NUM
 
     return await _save_and_confirm_account_update(update, context, new_bank=None, new_acc=clean_acc)
@@ -713,7 +755,7 @@ async def update_account_both_acc_num_handler(update: Update, context: ContextTy
 
     clean_acc = text.replace("-", "").replace(" ", "")
     if not clean_acc.isdigit() or len(clean_acc) != 10:
-        await safe_reply(update.message, "That doesn't look like a valid account number. Please try again, or send /cancel to stop.")
+        await safe_reply(update.message, "That doesn't look like a valid account number. Please try again (send a 10-digit NUBAN account number), or send /cancel to stop.")
         return STATE_WAIT_BOTH_ACC_NUM
 
     context.user_data["new_acc_num_both"] = clean_acc
@@ -767,7 +809,10 @@ def get_admin_update_account_conversation_handler() -> ConversationHandler:
         fallbacks=[
             CommandHandler("cancel", cancel_update_account_flow),
             CallbackQueryHandler(cancel_update_account_flow, pattern="^cancel_update_account$")
-        ]
+        ],
+        per_user=True,
+        per_chat=True,
+        per_message=False
     )
 
 
