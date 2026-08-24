@@ -160,10 +160,16 @@ async def post_init(application):
         logger.warning(f"Could not register Telegram UI bot commands: {e}")
 
 
+from telegram.request import HTTPXRequest
 import traceback
 
 async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Global exception handler to log tracebacks and alert admins in DM."""
+    from telegram.error import TimedOut, NetworkError, RetryAfter
+    if isinstance(context.error, (TimedOut, NetworkError, RetryAfter)):
+        logger.warning(f"Transient Telegram network poll event (auto-retrying): {context.error}")
+        return
+
     logger.error("Exception handling update:", exc_info=context.error)
 
     tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
@@ -190,9 +196,17 @@ def build_app():
     if not settings.BOT_TOKEN or settings.BOT_TOKEN.startswith("123456789:ABCdef"):
         logger.warning("Using default or mock BOT_TOKEN. Set BOT_TOKEN in .env for live Telegram connection.")
 
+    request_cfg = HTTPXRequest(
+        connect_timeout=15.0,
+        read_timeout=30.0,
+        write_timeout=15.0,
+        pool_timeout=15.0
+    )
+
     app = (
         ApplicationBuilder()
         .token(settings.BOT_TOKEN)
+        .request(request_cfg)
         .post_init(post_init)
         .build()
     )
