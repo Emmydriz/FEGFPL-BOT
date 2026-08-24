@@ -3,6 +3,7 @@ import io
 import csv
 from typing import Optional, List, Dict, Any
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.helpers import escape_markdown
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from database.db import get_db_session
 from database.models import User, FPLProfile, PayoutAccount, Payment, Referral, Reward, AuditLog
