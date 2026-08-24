@@ -1,3 +1,4 @@
+import datetime
 import httpx
 from typing import Tuple, Optional, Dict, Any, List
 from config.logging_config import logger
@@ -8,6 +9,65 @@ class FPLService:
     HEADERS = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
     }
+
+    _SEASON_DEADLINE_CACHE: Dict[str, Any] = {
+        "dt": None,
+        "source": None,
+        "expires_at": None
+    }
+
+    @classmethod
+    async def get_season_start_deadline(cls) -> Tuple[datetime.datetime, str]:
+        """
+        Dynamically fetches the FPL season start deadline (Gameweek 1 deadline) from the official FPL API.
+        Caches the result for 24 hours to minimize API load.
+        Falls back gracefully if the API is unreachable or next season fixtures aren't published yet.
+        """
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cache = cls._SEASON_DEADLINE_CACHE
+
+        if cache["dt"] and cache["expires_at"] and now < cache["expires_at"]:
+            return cache["dt"], cache["source"]
+
+        bootstrap = await cls.get_bootstrap_data()
+        gw1_dt = None
+        source = "FPL_API_GW1"
+
+        if bootstrap and "events" in bootstrap:
+            events = bootstrap.get("events", [])
+            gw1_event = None
+            for ev in events:
+                if ev.get("id") == 1:
+                    gw1_event = ev
+                    break
+
+            if not gw1_event:
+                for ev in events:
+                    if ev.get("is_next") or ev.get("is_current"):
+                        gw1_event = ev
+                        source = f"FPL_API_EV{ev.get('id')}"
+                        break
+
+            if gw1_event and gw1_event.get("deadline_time"):
+                try:
+                    dl_str = gw1_event["deadline_time"].replace("Z", "+00:00")
+                    gw1_dt = datetime.datetime.fromisoformat(dl_str)
+                    if gw1_dt.tzinfo is None:
+                        gw1_dt = gw1_dt.replace(tzinfo=datetime.timezone.utc)
+                except Exception as ex:
+                    logger.warning(f"Could not parse FPL GW1 deadline '{gw1_event.get('deadline_time')}': {ex}")
+
+        if not gw1_dt:
+            target_year = now.year if now.month <= 8 else now.year + 1
+            gw1_dt = datetime.datetime(target_year, 8, 15, 18, 0, 0, tzinfo=datetime.timezone.utc)
+            source = "FALLBACK_DEFAULT"
+            logger.warning(f"FPL API season deadline unavailable. Using fallback season start date: {gw1_dt}")
+
+        cache["dt"] = gw1_dt
+        cache["source"] = source
+        cache["expires_at"] = now + datetime.timedelta(hours=24)
+
+        return gw1_dt, source
 
     @classmethod
     async def validate_fpl_id(cls, fpl_id: int) -> Tuple[bool, Optional[str], Optional[str], Optional[Dict[str, Any]]]:

@@ -149,7 +149,6 @@ async def post_init(application):
         BotCommand("admin_referrals", "Referral leaderboard (Admin)"),
         BotCommand("finalizeseason", "Automated FPL season wrap (Admin)"),
         BotCommand("addwinner", "Admin fallback winner record"),
-        BotCommand("announce_gw_winner", "Announce GW winner (Admin)"),
         BotCommand("announcement_template", "Pinned channel message template"),
         BotCommand("admin", "Admin Dashboard (Authorized Admins)")
     ]
@@ -158,6 +157,32 @@ async def post_init(application):
         logger.info("Registered Telegram UI bot command menu.")
     except Exception as e:
         logger.warning(f"Could not register Telegram UI bot commands: {e}")
+
+
+import traceback
+
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Global exception handler to log tracebacks and alert admins in DM."""
+    logger.error("Exception handling update:", exc_info=context.error)
+
+    tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
+    tb_string = "".join(tb_list)
+
+    try:
+        from services.auth_service import AuthService
+        admin_ids = AuthService.get_payment_admin_ids()
+        err_text = (
+            "⚠️ **UNHANDLED BOT SYSTEM ERROR** 🚨\n\n"
+            f"**Error:** `{context.error}`\n\n"
+            f"```\n{tb_string[:1200]}\n```"
+        )
+        for aid in admin_ids:
+            try:
+                await context.bot.send_message(chat_id=aid, text=err_text, parse_mode="Markdown")
+            except Exception:
+                pass
+    except Exception as ex:
+        logger.warning(f"Could not notify admin of global error: {ex}")
 
 
 def build_app():
@@ -170,6 +195,9 @@ def build_app():
         .post_init(post_init)
         .build()
     )
+
+    # Register Global Error Handler
+    app.add_error_handler(global_error_handler)
 
     # Community New Member Join Handler
     app.add_handler(ChatMemberHandler(welcome_new_member_handler, ChatMemberHandler.CHAT_MEMBER))

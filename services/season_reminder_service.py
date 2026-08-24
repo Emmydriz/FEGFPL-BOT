@@ -12,24 +12,12 @@ class SeasonReminderService:
     @classmethod
     async def get_season_dates(cls) -> Dict[str, Any]:
         """
-        Fetches FPL GW1 deadline from the FPL API and calculates:
+        Fetches dynamic FPL GW1 deadline from the FPL API and calculates:
         - gw1_deadline_dt: Official start of the Premier League season
         - purge_deadline_dt: 14 days (2 weeks) before GW1 start
         - reminder_start_dt: 21 days (3 weeks) before the purge deadline (35 days before GW1)
         """
-        gw1_info = await FPLService.get_gameweek_info(1)
-
-        gw1_deadline_dt = None
-        if gw1_info and gw1_info.get("deadline_time"):
-            try:
-                dl_str = gw1_info["deadline_time"].replace("Z", "+00:00")
-                gw1_deadline_dt = datetime.datetime.fromisoformat(dl_str)
-            except Exception as e:
-                logger.warning(f"Could not parse GW1 deadline: {e}")
-
-        if not gw1_deadline_dt:
-            # Default fallback: August 15th, 2027 18:00 UTC
-            gw1_deadline_dt = datetime.datetime(2027, 8, 15, 18, 0, 0, tzinfo=datetime.timezone.utc)
+        gw1_deadline_dt, source = await FPLService.get_season_start_deadline()
 
         purge_deadline_dt = gw1_deadline_dt - datetime.timedelta(days=14)
         reminder_start_dt = purge_deadline_dt - datetime.timedelta(days=21)
@@ -37,7 +25,8 @@ class SeasonReminderService:
         return {
             "gw1_deadline_dt": gw1_deadline_dt,
             "purge_deadline_dt": purge_deadline_dt,
-            "reminder_start_dt": reminder_start_dt
+            "reminder_start_dt": reminder_start_dt,
+            "source": source
         }
 
     @classmethod

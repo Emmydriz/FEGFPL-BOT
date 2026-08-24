@@ -59,3 +59,24 @@ async def test_season_fields_and_hall_of_fame_records():
         assert res is not None
         assert res.rank == 1
         assert res.title == "Classic Champion"
+
+
+@pytest.mark.asyncio
+async def test_dynamic_season_purge_date():
+    from services.fpl_service import FPLService
+    from services.season_reminder_service import SeasonReminderService
+
+    # Test dynamic FPL API season deadline fetch
+    gw1_dt, source = await FPLService.get_season_start_deadline()
+    assert gw1_dt is not None
+    assert isinstance(gw1_dt, datetime.datetime)
+
+    dates = await SeasonReminderService.get_season_dates()
+    purge_dt = dates["purge_deadline_dt"]
+    reminder_dt = dates["reminder_start_dt"]
+
+    # Verify purge date is exactly 14 days before GW1 deadline
+    assert purge_dt == gw1_dt - datetime.timedelta(days=14)
+
+    # Verify reminder date is 21 days before purge date (35 days before GW1)
+    assert reminder_dt == purge_dt - datetime.timedelta(days=21)
