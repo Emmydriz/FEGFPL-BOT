@@ -219,22 +219,5 @@
     "bank_name": "Access Bank",
     "account_name": "Ayodele kolade Williams",
     "account_number": "1859469123"
-  },
-  {
-    "feg_member_id": "FEG-2026-000014",
-    "telegram_id": 7017254512,
-    "telegram_username": null,
-    "full_name": "FEG Admin 7017254512",
-    "registration_status": "COMMUNITY_ACCESS_GRANTED",
-    "account_status": "ACTIVE",
-    "referral_code": "FEG-REF-000014",
-    "fpl_id": null,
-    "manager_name": null,
-    "team_name": null,
-    "classic_status": "PENDING",
-    "h2h_status": "PENDING",
-    "bank_name": "Palmpay",
-    "account_name": "Odeyemi Omogbolahan",
-    "account_number": "8066106785"
   }
 ]
