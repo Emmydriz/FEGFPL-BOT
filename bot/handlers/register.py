@@ -38,7 +38,10 @@ async def safe_send_markdown(target_msg, text: str, reply_markup=None):
 async def start_registration_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if query:
-        await query.answer()
+        try:
+            await query.answer()
+        except Exception:
+            pass
 
     msg = (
         "👤 **FULL NAME**\n\n"
@@ -48,8 +51,15 @@ async def start_registration_callback(update: Update, context: ContextTypes.DEFA
         "You will be shown a full summary screen to review and edit all your details before making any payment."
     )
 
-    target_msg = query.message if query else update.message
-    await safe_send_markdown(target_msg, msg)
+    target_msg = query.message if (query and query.message) else update.message
+    if target_msg:
+        await safe_send_markdown(target_msg, msg)
+    else:
+        await context.bot.send_message(
+            chat_id=update.effective_user.id,
+            text=msg,
+            parse_mode="Markdown"
+        )
     return FULL_NAME
 
 
@@ -604,5 +614,8 @@ def get_registration_conversation_handler() -> ConversationHandler:
         fallbacks=[
             CommandHandler("cancel", cancel_registration_handler),
             CallbackQueryHandler(help_fpl_id_callback, pattern="^help_fpl_id$")
-        ]
+        ],
+        per_user=True,
+        per_chat=True,
+        per_message=False
     )
